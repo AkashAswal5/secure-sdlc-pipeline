@@ -2,8 +2,9 @@
 
 # git clone script --> this script will clone repo for which we are running this scan
 
-REPO_URL="$1"
-WORKSPACE="$2"
+source config/env.sh
+# REPO_URL="$REPO_URL"
+# WORKSPACE="$WORKSPACE"
 
 # check if the workspace exist 
 if [[  -d "$WORKSPACE" ]]; then
@@ -18,9 +19,9 @@ fi
 echo "Cloning  repository..."
 git clone "$REPO_URL" "$WORKSPACE"
 
-if [ $? -eq 0 ]
+if [ $? -eq 0 ]; then
 	echo "repo clone successfully....."
-else  
+else
 	echo "Failed to clone repository."
 	exit 1
 fi
