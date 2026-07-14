@@ -1,7 +1,8 @@
 #!/bin/bash
 
+source config/env.sh
 REPO_URL="$1"
-WORKSPACE="/tmp/workspace"
+export REPO_URL # `export REPO_URL` makes it available to child processes like clone.sh.
 
 if [ -z "$REPO_URL" ]; then # -z check if user provide string or not
     # run if above condition is true
