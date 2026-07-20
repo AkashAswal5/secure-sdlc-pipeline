@@ -13,7 +13,7 @@ fi
 echo "running ./pipeline.sh $REPO_URL"
 
 bash scripts/clone.sh "$REPO_URL" "$WORKSPACE"
-
+bash install/install_semgrep.sh
 bash scripts/semgrep.sh "$WORKSPACE"
 
 # remove repo after all work done
