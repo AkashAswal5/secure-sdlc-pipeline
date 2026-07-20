@@ -16,9 +16,9 @@ source "$VENV_DIR/bin/activate"
 # run Scan
 echo "Running static analysis"
 
-semgrep scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE" --json --output "$REPORT_DIR/semgrep_${TIMESTAMP}.json"
+"$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE" --json --output "$REPORT_DIR/semgrep_${TIMESTAMP}.json"
 
-semgrep scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE"  --text --output "$REPORT_DIR/semgrep_${TIMESTAMP}.txt"
+"$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE"  --text --output "$REPORT_DIR/semgrep_${TIMESTAMP}.txt"
 
 SCAN_EXIT_CODE=$?
 
