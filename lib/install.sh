@@ -12,9 +12,9 @@ fi
 
 check_report_dir() {
 if [ ! -d "$1" ] ; then
- mkdir -p "$1"
+   mkdir -p "$1"
 else
-  echo "$1 exist"
+   echo "$1 exist"
 fi 
 }
 

@@ -12,6 +12,7 @@ SEMGREP_RULES_CONFIG="${SEMGREP_RULES:-auto}"
 echo "starting scan on directory $WORKSPACE"
 echo "using rules: $SEMGREP_RULES_CONFIG"
 
+source "$VENV_DIR/bin/activate"
 # run Scan
 echo "Running static analysis"
 
