@@ -35,8 +35,14 @@ fi
 
 install_semgrep() {
 if ! command -v semgrep >/dev/null 2>&1; then
+  echo "install semgrep"
   pip install semgrep
 fi
 }
 
-
+install_gitleaks() {
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "Installing Gitleaks"
+  sudo "$PACKAGE_MANAGER" gitleaks
+fi
+}
