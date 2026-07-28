@@ -5,7 +5,6 @@ set -euo pipefail
  # -u  Undefined variables become errors
  # -o pipefail  Detect failures inside pipelines
 
-
 source config/env.sh
 SEMGREP_RULES_CONFIG="${SEMGREP_RULES:-auto}"
 
