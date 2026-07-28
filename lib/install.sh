@@ -46,3 +46,11 @@ if ! command -v gitleaks >/dev/null 2>&1; then
   sudo "$PACKAGE_MANAGER" gitleaks
 fi
 }
+
+install_jq() {
+if ! command -v jq >/dev/null 2>&1; then
+  echo "installing JQ"
+  sudo "$PACKAGE_MANAGER" jq
+fi
+}
+

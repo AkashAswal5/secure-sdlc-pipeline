@@ -11,10 +11,10 @@ install_python3
 create_virtual_environment
 source "$VENV_DIR/bin/activate"
 
-echo "installing Dependencies"
+echo -e "\n installing Dependencies \n "
 
 install_semgrep
 
 SEMGREP_VERSION=$(semgrep --version)
-echo "Semgrep install successfully: $SEMGREP_VERSION"
+echo -e "\n Semgrep install successfully: $SEMGREP_VERSION \n"
 
