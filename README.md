@@ -10,3 +10,17 @@
 - Phase 8: CodeQL — Advanced semantic code analysis
 - Phase 9: SBOM — Generate Software Bill of Materials
 - Phase 10: Tekton — Kubernetes-native CI/CD security pipeline
+
+
+---
+### references
+- checkov: https://www.checkov.io/1.Welcome/What%20is%20Checkov.html
+Checkov scans these IaC file types:
+    - Terraform (for AWS, GCP, Azure and OCI)
+    - CloudFormation (including AWS SAM)
+    - Azure Resource Manager (ARM)
+    - Serverless framework
+    - Helm charts
+    - Kubernetes
+    - Docker
+
