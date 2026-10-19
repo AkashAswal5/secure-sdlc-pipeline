@@ -1,9 +1,9 @@
 #!/bin/bash
 
-set -euo
+set -euo pipefail
 # -e exit on error
 # -u undefine variable become error
-# -o pipefall detect failure inside pipelines
+# -o pipefail detect failure inside pipelines
 
 source config/env.sh
 

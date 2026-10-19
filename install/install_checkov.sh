@@ -16,6 +16,6 @@ echo -e "\n installing Dependencies \n "
 
 install_checkov
 
-CHEVKOV_VERSION=$(semgrep --version)
+CHECKOV_VERSION=$(checkov --version)
 echo -e "\n checkov install successfully: $CHECKOV_VERSION \n"
 
