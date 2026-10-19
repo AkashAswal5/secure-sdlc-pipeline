@@ -22,6 +22,10 @@ bash scripts/semgrep.sh "$WORKSPACE"
 bash install/install_gitleaks.sh
 bash scripts/gitleaks.sh "$WORKSPACE"
 
+# checkov
+bash install/install_checkov.sh
+bash scripts/checkov.sh "$WORKSPACE"
+
 # remove repo after all work done
 # rm -rf "/tmp/workspace/"
 
