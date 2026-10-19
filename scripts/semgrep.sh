@@ -15,16 +15,18 @@ source "$VENV_DIR/bin/activate"
 # run Scan
 echo "Running static analysis"
 
+set +e
 "$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE" --json --output "$REPORT_DIR/semgrep/semgrep_${TIMESTAMP}.json"
+JSON_EXIT_CODE=$?
 
 "$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE"  --text --output "$REPORT_DIR/semgrep/semgrep_${TIMESTAMP}.txt"
-
-SCAN_EXIT_CODE=$?
+TEXT_EXIT_CODE=$?
+set -e
 
 echo "Scan completed, Report generated in $REPORT_DIR"
 
-if [ $SCAN_EXIT_CODE -ne 0 ]; then
-  echo "semgrep issue found exit code: $SCAN_EXIT_CODE"
+if [ "$JSON_EXIT_CODE" -ne 0 ] || [ "$TEXT_EXIT_CODE" -ne 0 ]; then
+  echo "semgrep issue found, json exit code: $JSON_EXIT_CODE, text exit code: $TEXT_EXIT_CODE"
 else
   echo "no issue found"
 fi

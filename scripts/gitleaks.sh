@@ -24,20 +24,20 @@ REPORT_GIT1="$REPORT_DIR/gitleaks/gitleaks_git_${TIMESTAMP}.json"
 REPORT_DIR1="$REPORT_DIR/gitleaks/gitleaks_dir_${TIMESTAMP}.json"
 
 set +e # gitleaks return non zero exit code (because it found secrets), script may exit before
-# scan directory and files for secrets
+# scan git repositories for secrets
 gitleaks git "$WORKSPACE" --report-format json --report-path "$REPORT_GIT1"
-# scan git repositories for secrets 
+GIT_SCAN_EXIT_CODE=$?
+# scan directory and files for secrets
 gitleaks dir "$WORKSPACE" --report-format json --report-path "$REPORT_DIR1"
-
-SCAN_EXIT_CODE=$?
+DIR_SCAN_EXIT_CODE=$?
 
 set -e
 
-if [ $SCAN_EXIT_CODE -eq 0 ]; then
+if [ "$GIT_SCAN_EXIT_CODE" -eq 0 ] && [ "$DIR_SCAN_EXIT_CODE" -eq 0 ]; then
 	echo "scan completed, no issue found"
 	echo "gitleaks scan completed, report generated in $REPORT_DIR"
 else
-	echo "gitleaks issue found exit code: $SCAN_EXIT_CODE"
+	echo "gitleaks issue found, git exit code: $GIT_SCAN_EXIT_CODE, dir exit code: $DIR_SCAN_EXIT_CODE"
 fi
 
 echo -e "............. summary of gitleaks .............."
@@ -45,8 +45,8 @@ GIT_LEAK_COUNT=$(jq length "$REPORT_GIT1")
 DIR_LEAK_COUNT=$(jq length "$REPORT_DIR1")
 echo -e "\n total secret found in current working directory is: $DIR_LEAK_COUNT & in git history is: $GIT_LEAK_COUNT"
 
-echo -e "\n DIR REPORT: $REPORT_GIT1"
-echo -e "\n GIT REPORT: $REPORT_DIR1"
+echo -e "\n GIT REPORT: $REPORT_GIT1"
+echo -e "\n DIR REPORT: $REPORT_DIR1"
 
 echo "gitleaks found in these files: "
 jq -r '.[].File' "$REPORT_GIT1"
@@ -55,6 +55,6 @@ echo "these are the Rules IDs"
 jq -r '.[].RuleID' "$REPORT_GIT1"
 
 echo -e "\n \n "
-jq -r '.[] | "\(.File) -> \(.RuleID)"' gitleaks_report.json
+jq -r '.[] | "\(.File) -> \(.RuleID)"' "$REPORT_GIT1"
 
 

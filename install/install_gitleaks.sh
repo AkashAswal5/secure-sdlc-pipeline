@@ -12,6 +12,6 @@ echo "installing Gitleaks"
 install_gitleaks
 
 GITLEAKS_VERSION=$(gitleaks version)
-echo "Semgrep install successfully: $GITLEAKS_VERSION"
+echo "Gitleaks install successfully: $GITLEAKS_VERSION"
 
 
