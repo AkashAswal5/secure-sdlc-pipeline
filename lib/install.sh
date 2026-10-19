@@ -54,3 +54,9 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 }
 
+install_checkov() {
+if ! command -v checkov >/dev/null 2>&1; then
+  echo "installing checkov"
+  pip3 install checkov
+fi
+}
