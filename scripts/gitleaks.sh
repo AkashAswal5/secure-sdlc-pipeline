@@ -15,7 +15,12 @@ if [ ! -d "$WORKSPACE" ]; then
     exit 1
 fi
 
-if ! command -v gitleaks >/dev/null 2>&1; then
+# find gitleaks: PATH first, then tools-workspace binary (github release fallback)
+if command -v gitleaks >/dev/null 2>&1; then
+    GITLEAKS_BIN=$(command -v gitleaks)
+elif [ -x "$TOOLS_WORKSPACE/bin/gitleaks" ]; then
+    GITLEAKS_BIN="$TOOLS_WORKSPACE/bin/gitleaks"
+else
     echo "Gitleaks is not installed."
     exit 1
 fi
@@ -25,10 +30,11 @@ REPORT_DIR1="$REPORT_DIR/gitleaks/gitleaks_dir_${TIMESTAMP}.json"
 
 set +e # gitleaks return non zero exit code (because it found secrets), script may exit before
 # scan git repositories for secrets
-gitleaks git "$WORKSPACE" --report-format json --report-path "$REPORT_GIT1"
+# scan git repositories for secrets
+"$GITLEAKS_BIN" git "$WORKSPACE" --report-format json --report-path "$REPORT_GIT1"
 GIT_SCAN_EXIT_CODE=$?
 # scan directory and files for secrets
-gitleaks dir "$WORKSPACE" --report-format json --report-path "$REPORT_DIR1"
+"$GITLEAKS_BIN" dir "$WORKSPACE" --report-format json --report-path "$REPORT_DIR1"
 DIR_SCAN_EXIT_CODE=$?
 
 set -e

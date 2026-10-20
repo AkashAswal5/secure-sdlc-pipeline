@@ -44,7 +44,7 @@ fi
 
 echo -e "............. summary of checkov .............."
 if command -v jq >/dev/null 2>&1 && [ -s "$CHECKOV_REPORT" ]; then
-	PASSED=$(jq -r '([.[].summary.passed // 0] | add)' "$CHECKOV_REPORT")
-	FAILED=$(jq -r '([.[].summary.failed // 0] | add)' "$CHECKOV_REPORT")
+	PASSED=$(jq -r '([.[] | .summary?.passed // 0] | add) // 0' "$CHECKOV_REPORT")
+	FAILED=$(jq -r '([.[] | .summary?.failed // 0] | add) // 0' "$CHECKOV_REPORT")
 	echo -e "\n total checks passed: $PASSED & failed: $FAILED"
 fi

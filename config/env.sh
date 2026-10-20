@@ -7,7 +7,7 @@ REPORT_DIR="/tmp/reports"
 TOOLS_WORKSPACE="/tmp/cyber_tools/semgrep-workspace"
 # TOOLS_WORKSPACE="$HOME/cyber_tools/semgrep-workspace"
 VENV_DIR="$TOOLS_WORKSPACE/myenv"
-PACKAGE_MANAGER="pacman -S"
+# PACKAGE_MANAGER is set by lib/pm.sh (prompt / auto-detect / --pm override)
 TIMESTAMP=$(date +"20%y_%m_%d_%H:%M:%S")
 SEMGREP_BIN="$VENV_DIR/bin/semgrep"
 SEMGREP_RULES_CONFIG="auto"
