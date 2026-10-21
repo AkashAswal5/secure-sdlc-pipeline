@@ -86,6 +86,15 @@ category_title() {
   esac
 }
 
+# make locations repo-relative: strip the workspace prefix so reports read
+# "src/app/api/route.ts:42" instead of "/tmp/workspace/src/app/api/route.ts:42"
+# reads a findings array on stdin, writes it back with .location rewritten
+relativize_locations() {
+  jq --arg ws "$WORKSPACE" 'map(
+    .location |= (if startswith($ws + "/") then .[($ws | length) + 1:] else . end)
+  )'
+}
+
 # ---- normalizers ----
 
 # semgrep: results[].extra.severity is ERROR/WARNING/INFO -> High/Medium/Low
@@ -149,7 +158,7 @@ normalize_checkov() {
       severity: ((.severity // "MEDIUM") | ascii_downcase | {"critical":"Critical","high":"High","medium":"Medium","low":"Low"}[.] // "Medium"),
       id: (.check_id // "checkov-finding"),
       title: (.check_name // .check_id // "checkov finding"),
-      location: ((.file_path // "?") + ":" + ((.file_line_range[0] // 0) | tostring)),
+      location: (((.file_path // "?") | ltrimstr("/")) + ":" + ((.file_line_range[0] // 0) | tostring)),
       description: ((.check_name // .check_id // "") + " - resource: " + (.resource // "n/a"))
     }
   ]' "$report"

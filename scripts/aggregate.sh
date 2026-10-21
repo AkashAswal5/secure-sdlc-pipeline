@@ -42,6 +42,10 @@ jq -s 'add // []' "$TMP_AGG"/*.json > "$TMP_AGG/all_findings.json"
 categorize_findings < "$TMP_AGG/all_findings.json" > "$TMP_AGG/categorized.json"
 mv "$TMP_AGG/categorized.json" "$TMP_AGG/all_findings.json"
 
+# make locations repo-relative for readable reports
+relativize_locations < "$TMP_AGG/all_findings.json" > "$TMP_AGG/relativized.json"
+mv "$TMP_AGG/relativized.json" "$TMP_AGG/all_findings.json"
+
 TOTAL_FINDINGS=$(jq 'length' "$TMP_AGG/all_findings.json")
 VERDICT="PASS"
 if [ "$TOTAL_FINDINGS" -gt 0 ]; then
@@ -102,7 +106,7 @@ jq -n \
 		findings: ($findings[0] // [])
 	}' > "$UNIFIED_JSON"
 
-# ---- build the unified markdown report ----
+# ---- build the unified markdown report (executive style) ----
 UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 
 {
@@ -113,11 +117,43 @@ UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 	echo "- **Package manager:** $(jq -r '.metadata.package_manager' "$UNIFIED_JSON")"
 	echo "- **Verdict:** **$VERDICT** ($TOTAL_FINDINGS findings)"
 	echo
-	echo "## Severity rollup"
+	echo "## Categories"
+	echo
+	echo "| Category | Findings |"
+	echo "| --- | --- |"
+	for cat in secrets dependency api code infrastructure; do
+		jq -rn --arg c "$cat" \
+			--argjson n "$(jq --arg c "$cat" '[.[] | select(.category == $c)] | length' "$TMP_AGG/all_findings.json")" \
+			'"| \($c) | \($n) |"'
+	done
+	echo
+	echo "## Severity"
 	echo
 	echo "| Critical | High | Medium | Low | Unknown |"
 	echo "| --- | --- | --- | --- | --- |"
 	jq -r '.summary.severity | "| \(.Critical) | \(.High) | \(.Medium) | \(.Low) | \(.Unknown) |"' "$UNIFIED_JSON"
+	echo
+	echo "## Top offenders"
+	echo
+	echo "_Locations with the most findings — fix these first._"
+	echo
+	echo "| Location | Findings |"
+	echo "| --- | --- |"
+	jq -r 'group_by(.location)
+		| map({location: .[0].location, count: length})
+		| sort_by(-.count) | .[0:10][]
+		| "| \(.location) | \(.count) |"' "$TMP_AGG/all_findings.json"
+	echo
+	echo "## Critical findings"
+	echo
+	CRIT_COUNT=$(jq '[.[] | select(.severity == "Critical")] | length' "$TMP_AGG/all_findings.json")
+	if [ "$CRIT_COUNT" -eq 0 ]; then
+		echo "_None._"
+	else
+		jq -r '.[] | select(.severity == "Critical")
+			| (.title | if length > 80 then .[:77] + "..." else . end) as $t
+			| "- **\(.id)** — \(.location) (\($t))"' "$TMP_AGG/all_findings.json"
+	fi
 	echo
 	echo "## Tools"
 	echo
@@ -127,21 +163,12 @@ UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 		jq -r --arg t "$t" '.summary.tools[$t] | "| \($t) | \(.status) | \(.findings) |"' "$UNIFIED_JSON"
 	done
 	echo
-	echo "## Findings"
-	for t in semgrep gitleaks checkov osv-scanner trivy; do
-		count=$(jq -r --arg t "$t" '.summary.tools[$t].findings' "$UNIFIED_JSON")
-		if [ "$count" = "0" ] || [ "$count" = "null" ]; then
-			continue
-		fi
-		echo
-		echo "### $t ($count)"
-		echo
-		echo "| Severity | ID | Location | Description |"
-		echo "| --- | --- | --- | --- |"
-		jq -r --arg t "$t" \
-			'.findings[] | select(.tool == $t) |
-			"| \(.severity) | \(.id) | \(.location) | \(.title) |" |
-			gsub("[\n\r\t]"; " ")' "$UNIFIED_JSON"
+	echo "## Detailed findings"
+	echo
+	echo "_Every finding (full IDs, full descriptions) is in the category report files:_"
+	echo
+	for cat in secrets dependency api code infrastructure; do
+		echo "- $(category_title "$cat"): \`${cat}_findings_${TIMESTAMP}.json\` / \`.md\`"
 	done
 } > "$UNIFIED_MD"
 
