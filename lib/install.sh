@@ -228,6 +228,70 @@ install_osv_scanner() {
   esac
 }
 
+# find the trivy binary: PATH first, then our tools-workspace fallback location
+resolve_trivy() {
+  if command -v trivy >/dev/null 2>&1; then
+    command -v trivy
+  elif [ -x "$TOOLS_WORKSPACE/bin/trivy" ]; then
+    echo "$TOOLS_WORKSPACE/bin/trivy"
+  else
+    echo ""
+  fi
+}
+
+# trivy is a single go binary: pacman/brew ship it, others get the official binary from github releases
+install_trivy_binary() {
+  local bin_dir="$TOOLS_WORKSPACE/bin"
+  mkdir -p "$bin_dir"
+  local os arch tag version tmp
+  case "$(uname -s)" in
+    Linux) os="Linux" ;;
+    Darwin) os="macOS" ;;
+    *)
+      echo "unsupported OS for trivy binary: $(uname -s)"
+      exit 1
+      ;;
+  esac
+  case "$(uname -m)" in
+    x86_64|amd64) arch="64bit" ;;
+    aarch64|arm64) arch="ARM64" ;;
+    *)
+      echo "unsupported architecture for trivy binary: $(uname -m)"
+      exit 1
+      ;;
+  esac
+  tag=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/aquasecurity/trivy/releases/latest | sed 's|.*/tag/||')
+  if [ -z "$tag" ] || [ "$tag" = "latest" ]; then
+    echo "failed to resolve latest trivy release tag"
+    exit 1
+  fi
+  version="${tag#v}"
+  tmp=$(mktemp -d)
+  echo "downloading trivy $version ($os $arch)"
+  curl -sL -o "$tmp/trivy.tar.gz" "https://github.com/aquasecurity/trivy/releases/download/${tag}/trivy_${version}_${os}-${arch}.tar.gz"
+  tar -xzf "$tmp/trivy.tar.gz" -C "$tmp"
+  mv "$tmp/trivy" "$bin_dir/trivy"
+  chmod +x "$bin_dir/trivy"
+  rm -rf "$tmp"
+  echo "trivy binary installed at $bin_dir/trivy"
+}
+
+install_trivy() {
+  if command -v trivy >/dev/null 2>&1; then
+    return 0
+  fi
+  case "$PACKAGE_MANAGER" in
+    pacman|brew)
+      echo "installing trivy via $PACKAGE_MANAGER"
+      pkg_install trivy
+      ;;
+    *)
+      echo "trivy not available in $PACKAGE_MANAGER, using binary download fallback"
+      install_trivy_binary
+      ;;
+  esac
+}
+
 install_jq() {
 if ! command -v jq >/dev/null 2>&1; then
   echo "installing jq via $PACKAGE_MANAGER"
