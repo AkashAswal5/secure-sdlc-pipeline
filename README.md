@@ -40,4 +40,10 @@ Trivy scans containers and filesystems:
     - `unified_report_<TS>.json` — machine readable (metadata, summary, all normalized findings)
     - `unified_report_<TS>.md` — human readable (verdict, severity rollup, per-tool finding tables)
     - pipeline exits non-zero (FAIL verdict) when any tool found issues
+    - findings are also split into one json + markdown file pair per category:
+        - `secrets_findings_<TS>` — hardcoded credentials (gitleaks)
+        - `dependency_findings_<TS>` — library / package vulnerabilities (osv-scanner, trivy CVE/GHSA)
+        - `api_findings_<TS>` — findings in API route code (src/app/api/**)
+        - `code_findings_<TS>` — other application code findings (semgrep)
+        - `infrastructure_findings_<TS>` — IaC / Docker / CI-CD / package-manager config findings (checkov, trivy misconfig, semgrep yaml/bash/npm rules)
 
