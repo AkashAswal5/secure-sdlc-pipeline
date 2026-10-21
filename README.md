@@ -30,3 +30,9 @@ OSV-Scanner scans dependency lockfiles / manifests against the OSV database:
     - SBOMs (SPDX, CycloneDX)
     - Git directories
 
+- trivy: https://trivy.dev/
+Trivy scans containers and filesystems:
+    - Container images (`./pipeline.sh <url> --image <name>`)
+    - Filesystem (dependency vulns + misconfigurations in the repo)
+    - Git repos, SBOMs, Kubernetes
+
