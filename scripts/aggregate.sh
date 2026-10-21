@@ -93,6 +93,10 @@ jq -n \
 				{Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0};
 				.[$f.severity] = (.[$f.severity] + 1)
 			)),
+			categories: (reduce $findings[0][] as $f (
+				{secrets: 0, dependency: 0, api: 0, code: 0, infrastructure: 0};
+				.[$f.category] = (.[$f.category] + 1)
+			)),
 			tools: $tools
 		},
 		findings: ($findings[0] // [])
@@ -166,6 +170,11 @@ echo -e "............. unified report .............."
 echo "verdict: $VERDICT ($TOTAL_FINDINGS findings)"
 jq -r '.summary.tools | to_entries[] | "  \(.key): \(.value.status) - \(.value.findings) findings"' "$UNIFIED_JSON"
 jq -r '.summary.severity | "  severity: critical=\(.Critical) high=\(.High) medium=\(.Medium) low=\(.Low) unknown=\(.Unknown)"' "$UNIFIED_JSON"
+jq -r '.summary.categories | to_entries[] | "  category \(.key): \(.value) findings"' "$UNIFIED_JSON"
+echo "category reports in $UNIFIED_DIR:"
+for cat in secrets dependency api code infrastructure; do
+	echo "  $cat: $UNIFIED_DIR/${cat}_findings_${TIMESTAMP}.json / .md"
+done
 echo "unified json: $UNIFIED_JSON"
 echo "unified markdown: $UNIFIED_MD"
 
