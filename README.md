@@ -24,3 +24,9 @@ Checkov scans these IaC file types:
     - Kubernetes
     - Docker
 
+- osv-scanner: https://google.github.io/osv-scanner/
+OSV-Scanner scans dependency lockfiles / manifests against the OSV database:
+    - Lockfiles (package-lock.json, requirements.txt, poetry.lock, go.sum, etc.)
+    - SBOMs (SPDX, CycloneDX)
+    - Git directories
+

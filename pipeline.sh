@@ -50,5 +50,9 @@ bash scripts/gitleaks.sh "$WORKSPACE"
 bash install/install_checkov.sh
 bash scripts/checkov.sh "$WORKSPACE"
 
+# osv-scanner
+bash install/install_osv_scanner.sh
+bash scripts/osv_scanner.sh "$WORKSPACE"
+
 # remove repo after all work done
 # rm -rf "/tmp/workspace/"
