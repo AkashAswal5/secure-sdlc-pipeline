@@ -178,17 +178,41 @@ for cat in secrets dependency api code infrastructure; do
 	cat_md="$UNIFIED_DIR/${cat}_findings_${TIMESTAMP}.md"
 	jq --arg c "$cat" '[.[] | select(.category == $c)] | {category: $c, count: length, findings: .}' \
 		"$TMP_AGG/all_findings.json" > "$cat_json"
+	cat_count=$(jq --arg c "$cat" '[.[] | select(.category == $c)] | length' "$TMP_AGG/all_findings.json")
 	{
 		echo "# $(category_title "$cat")"
 		echo
-		echo "$(jq --arg c "$cat" '[.[] | select(.category == $c)] | length' "$TMP_AGG/all_findings.json") findings"
+		echo "$cat_count findings"
 		echo
-		echo "| Severity | Tool | ID | Location | Description |"
-		echo "| --- | --- | --- | --- | --- |"
-		jq -r --arg c "$cat" \
-			'.[] | select(.category == $c) |
-			"| \(.severity) | \(.tool) | \(.id) | \(.location) | \(.title) |" |
-			gsub("[\n\r\t]"; " ")' "$TMP_AGG/all_findings.json"
+		if [ "$cat_count" -eq 0 ]; then
+			echo "_No findings in this category._"
+		elif [ "$cat" = "dependency" ]; then
+			echo "Grouped by package (advisory IDs counted as reported by each scanner —"
+			echo "the same vulnerability may appear under a CVE id from one scanner and a"
+			echo "GHSA id from another; full detail is in the json report):"
+			echo
+			echo "| Package | Advisories | Worst severity | Scanners |"
+			echo "| --- | --- | --- | --- |"
+			jq -r 'def sev_rank: {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Unknown": 4}[.];
+				[.[] | select(.category == "dependency")]
+				| group_by(.location)
+				| map({
+					pkg: .[0].location,
+					count: length,
+					worst: (map(.severity) | sort_by(sev_rank) | .[0]),
+					scanners: (map(.tool) | unique | sort | join(", "))
+				})
+				| sort_by(-.count)[]
+				| "| \(.pkg) | \(.count) | \(.worst) | \(.scanners) |"' "$TMP_AGG/all_findings.json"
+		else
+			echo "| Severity | Tool | Rule | Location | Description |"
+			echo "| --- | --- | --- | --- | --- |"
+			jq -r --arg c "$cat" '.[] | select(.category == $c)
+				| (.id | if test("\\.") then split(".") | .[-2:] | join(".") else . end) as $id
+				| (.title | if length > 90 then .[:87] + "..." else . end) as $desc
+				| "| \(.severity) | \(.tool) | \($id) | \(.location) | \($desc) |"
+				| gsub("[\n\r\t]"; " ")' "$TMP_AGG/all_findings.json"
+		fi
 	} > "$cat_md"
 done
 
