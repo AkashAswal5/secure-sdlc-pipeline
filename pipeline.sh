@@ -45,6 +45,11 @@ export REPO_URL # `export REPO_URL` makes it available to child processes like c
 # ask user for package manager (auto-picks if only one installed, honors --pm / PACKAGE_MANAGER)
 select_package_manager "$PM_ARG"
 
+# start a fresh run manifest: scan scripts record their report paths in it,
+# the aggregator (phase 6) then only uses reports from this pipeline run
+mkdir -p "$REPORT_DIR"
+: > "$RUN_MANIFEST"
+
 bash scripts/clone.sh "$REPO_URL" "$WORKSPACE" || { echo "failed to clone $REPO_URL, aborting pipeline"; exit 1; }
 
 # semgrep
@@ -70,5 +75,12 @@ fi
 bash install/install_trivy.sh
 bash scripts/trivy.sh "$WORKSPACE"
 
+# report aggregation (phase 6): unified json + markdown report
+# exits 1 when any tool found issues, this gates the whole pipeline
+bash scripts/aggregate.sh
+PIPELINE_EXIT_CODE=$?
+
 # remove repo after all work done
 # rm -rf "/tmp/workspace/"
+
+exit $PIPELINE_EXIT_CODE
