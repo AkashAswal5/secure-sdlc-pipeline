@@ -36,3 +36,8 @@ Trivy scans containers and filesystems:
     - Filesystem (dependency vulns + misconfigurations in the repo)
     - Git repos, SBOMs, Kubernetes
 
+- report aggregation: all tool reports are merged into one unified report in `$REPORT_DIR/unified/`:
+    - `unified_report_<TS>.json` — machine readable (metadata, summary, all normalized findings)
+    - `unified_report_<TS>.md` — human readable (verdict, severity rollup, per-tool finding tables)
+    - pipeline exits non-zero (FAIL verdict) when any tool found issues
+
