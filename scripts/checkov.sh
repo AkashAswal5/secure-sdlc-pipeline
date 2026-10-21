@@ -36,6 +36,12 @@ CHECKOV_REPORT="$CHECKOV_REPORT_DIR/results_json.json"
 
 echo "Scan completed, Report generated in $CHECKOV_REPORT"
 
+# record the report path for the aggregator (phase 6)
+if [ -s "$CHECKOV_REPORT" ]; then
+	mkdir -p "$REPORT_DIR"
+	echo "checkov|$CHECKOV_REPORT" >> "$RUN_MANIFEST"
+fi
+
 if [ "$CHECKOV_EXIT_CODE" -eq 0 ]; then
 	echo "no issue found"
 else

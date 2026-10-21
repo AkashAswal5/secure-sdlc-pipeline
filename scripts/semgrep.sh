@@ -15,13 +15,23 @@ source "$VENV_DIR/bin/activate"
 # run Scan
 echo "Running static analysis"
 
+SEMGREP_JSON_REPORT="$REPORT_DIR/semgrep/semgrep_${TIMESTAMP}.json"
+SEMGREP_TXT_REPORT="$REPORT_DIR/semgrep/semgrep_${TIMESTAMP}.txt"
+
+# semgrep may exit non-zero when findings exist, so capture exit codes manually
 set +e
-"$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE" --json --output "$REPORT_DIR/semgrep/semgrep_${TIMESTAMP}.json"
+"$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE" --json --output "$SEMGREP_JSON_REPORT"
 JSON_EXIT_CODE=$?
 
-"$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE"  --text --output "$REPORT_DIR/semgrep/semgrep_${TIMESTAMP}.txt"
+"$SEMGREP_BIN" scan --config "$SEMGREP_RULES_CONFIG" "$WORKSPACE"  --text --output "$SEMGREP_TXT_REPORT"
 TEXT_EXIT_CODE=$?
 set -e
+
+# record the report path for the aggregator (phase 6)
+if [ -s "$SEMGREP_JSON_REPORT" ]; then
+	mkdir -p "$REPORT_DIR"
+	echo "semgrep|$SEMGREP_JSON_REPORT" >> "$RUN_MANIFEST"
+fi
 
 echo "Scan completed, Report generated in $REPORT_DIR"
 

@@ -28,6 +28,30 @@ find_latest_checkov_report() {
   return 0
 }
 
+# resolve a tool's report path for this run:
+# 1. run manifest (written by scan scripts, truncated by pipeline.sh at every run start)
+# 2. fallback: newest report file per tool (legacy mode, standalone aggregate runs)
+# outputs empty string when the tool did not run
+manifest_lookup() {
+  local tag="$1" path
+  if [ -s "${RUN_MANIFEST:-}" ]; then
+    path=$(grep "^$tag|" "$RUN_MANIFEST" | tail -1 | cut -d'|' -f2 || true)
+  else
+    case "$tag" in
+      semgrep) path=$(find_latest_report "$REPORT_DIR/semgrep" 'semgrep_*.json') ;;
+      gitleaks-git) path=$(find_latest_report "$REPORT_DIR/gitleaks" 'gitleaks_git_*.json') ;;
+      gitleaks-dir) path=$(find_latest_report "$REPORT_DIR/gitleaks" 'gitleaks_dir_*.json') ;;
+      checkov) path=$(find_latest_checkov_report) ;;
+      osv-scanner) path=$(find_latest_report "$REPORT_DIR/osv-scanner" 'osv-scanner_*.json') ;;
+      trivy) path=$(find_latest_report "$REPORT_DIR/trivy" 'trivy_*.json') ;;
+    esac
+  fi
+  if [ -n "$path" ] && [ -f "$path" ]; then
+    echo "$path"
+  fi
+  return 0
+}
+
 # ---- normalizers ----
 
 # semgrep: results[].extra.severity is ERROR/WARNING/INFO -> High/Medium/Low
@@ -79,17 +103,22 @@ normalize_gitleaks() {
 }
 
 # checkov: array per framework, failed checks under results.failed_checks[]
+# note: a report with zero scannable files is a bare object, not an array - handle both shapes
 normalize_checkov() {
   local report="$1"
   if [ -z "$report" ]; then echo "[]"; return 0; fi
-  jq -c '[.[]? | .results.failed_checks[]? | {
-    tool: "checkov",
-    severity: ((.severity // "MEDIUM") | ascii_downcase | {"critical":"Critical","high":"High","medium":"Medium","low":"Low"}[.] // "Medium"),
-    id: (.check_id // "checkov-finding"),
-    title: (.check_name // .check_id // "checkov finding"),
-    location: ((.file_path // "?") + ":" + ((.file_line_range[0] // 0) | tostring)),
-    description: ((.check_name // .check_id // "") + " - resource: " + (.resource // "n/a"))
-  }]' "$report"
+  jq -c '[
+    (.results?.failed_checks[]?),
+    (.[]? | select(type == "object") | .results?.failed_checks[]?) |
+    {
+      tool: "checkov",
+      severity: ((.severity // "MEDIUM") | ascii_downcase | {"critical":"Critical","high":"High","medium":"Medium","low":"Low"}[.] // "Medium"),
+      id: (.check_id // "checkov-finding"),
+      title: (.check_name // .check_id // "checkov finding"),
+      location: ((.file_path // "?") + ":" + ((.file_line_range[0] // 0) | tostring)),
+      description: ((.check_name // .check_id // "") + " - resource: " + (.resource // "n/a"))
+    }
+  ]' "$report"
 }
 
 # osv-scanner: results[].packages[].vulnerabilities[], no per-vuln severity in json output -> High

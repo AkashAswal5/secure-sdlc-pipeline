@@ -49,6 +49,12 @@ set -e
 
 echo "Scan completed, Report generated in $REPORT_DIR/trivy"
 
+# record the report path for the aggregator (phase 6)
+if [ -s "$TRIVY_JSON_REPORT" ]; then
+	mkdir -p "$REPORT_DIR"
+	echo "trivy|$TRIVY_JSON_REPORT" >> "$RUN_MANIFEST"
+fi
+
 if [ "$TRIVY_JSON_EXIT_CODE" -eq 0 ] && [ "$TRIVY_TXT_EXIT_CODE" -eq 0 ]; then
 	echo "no issue found"
 else

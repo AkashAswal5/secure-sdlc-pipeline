@@ -39,6 +39,13 @@ set -e
 
 echo "Scan completed, Report generated in $REPORT_DIR/osv-scanner"
 
+# record the report path for the aggregator (phase 6)
+# no file is written when no package files were found (exit 128) -> tool shows as not_run
+if [ -s "$OSV_JSON_REPORT" ]; then
+	mkdir -p "$REPORT_DIR"
+	echo "osv-scanner|$OSV_JSON_REPORT" >> "$RUN_MANIFEST"
+fi
+
 # exit codes: 0 = no vulnerabilities, 1 = vulnerabilities found, 2 = error, 128 = no package files found
 if [ "$OSV_JSON_EXIT_CODE" -eq 128 ] && [ "$OSV_TXT_EXIT_CODE" -eq 128 ]; then
 	echo "no package files (lockfiles) found in workspace, nothing to scan"
