@@ -38,9 +38,9 @@ Trivy scans containers and filesystems:
 
 - report aggregation: all tool reports are merged into one unified report in `$REPORT_DIR/unified/`:
     - `unified_report_<TS>.json` — machine readable (metadata, summary, all normalized findings)
-    - `unified_report_<TS>.md` — human readable (verdict, severity rollup, per-tool finding tables)
+    - `unified_report_<TS>.md` — human readable executive report (verdict, category/severity summary, top offenders, critical findings, links to category files)
     - pipeline exits non-zero (FAIL verdict) when any tool found issues
-    - findings are also split into one json + markdown file pair per category:
+    - findings are also split into one json + markdown file pair per category (locations are repo-relative, dependency findings grouped by package):
         - `secrets_findings_<TS>` — hardcoded credentials (gitleaks)
         - `dependency_findings_<TS>` — library / package vulnerabilities (osv-scanner, trivy CVE/GHSA)
         - `api_findings_<TS>` — findings in API route code (src/app/api/**)
