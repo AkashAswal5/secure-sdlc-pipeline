@@ -12,14 +12,19 @@ UNIFIED_DIR="$REPORT_DIR/unified"
 mkdir -p "$UNIFIED_DIR"
 
 echo "aggregating reports from $REPORT_DIR"
+if [ -s "$RUN_MANIFEST" ]; then
+	echo "mode: run manifest ($(wc -l < "$RUN_MANIFEST" | tr -d ' ') recorded reports from this run)"
+else
+	echo "mode: no run manifest, using newest report per tool (legacy)"
+fi
 
-# ---- discover the latest report of each tool ----
-SEMGREP_REPORT=$(find_latest_report "$REPORT_DIR/semgrep" 'semgrep_*.json')
-GITLEAKS_GIT_REPORT=$(find_latest_report "$REPORT_DIR/gitleaks" 'gitleaks_git_*.json')
-GITLEAKS_DIR_REPORT=$(find_latest_report "$REPORT_DIR/gitleaks" 'gitleaks_dir_*.json')
-CHECKOV_REPORT=$(find_latest_checkov_report)
-OSV_REPORT=$(find_latest_report "$REPORT_DIR/osv-scanner" 'osv-scanner_*.json')
-TRIVY_REPORT=$(find_latest_report "$REPORT_DIR/trivy" 'trivy_*.json')
+# ---- discover this run's report of each tool ----
+SEMGREP_REPORT=$(manifest_lookup "semgrep")
+GITLEAKS_GIT_REPORT=$(manifest_lookup "gitleaks-git")
+GITLEAKS_DIR_REPORT=$(manifest_lookup "gitleaks-dir")
+CHECKOV_REPORT=$(manifest_lookup "checkov")
+OSV_REPORT=$(manifest_lookup "osv-scanner")
+TRIVY_REPORT=$(manifest_lookup "trivy")
 
 # ---- normalize every tool into the common finding shape ----
 TMP_AGG=$(mktemp -d)

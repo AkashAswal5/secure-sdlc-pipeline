@@ -30,7 +30,6 @@ REPORT_DIR1="$REPORT_DIR/gitleaks/gitleaks_dir_${TIMESTAMP}.json"
 
 set +e # gitleaks return non zero exit code (because it found secrets), script may exit before
 # scan git repositories for secrets
-# scan git repositories for secrets
 "$GITLEAKS_BIN" git "$WORKSPACE" --report-format json --report-path "$REPORT_GIT1"
 GIT_SCAN_EXIT_CODE=$?
 # scan directory and files for secrets
@@ -38,6 +37,11 @@ GIT_SCAN_EXIT_CODE=$?
 DIR_SCAN_EXIT_CODE=$?
 
 set -e
+
+# record the report paths for the aggregator (phase 6)
+mkdir -p "$REPORT_DIR"
+[ -s "$REPORT_GIT1" ] && echo "gitleaks-git|$REPORT_GIT1" >> "$RUN_MANIFEST"
+[ -s "$REPORT_DIR1" ] && echo "gitleaks-dir|$REPORT_DIR1" >> "$RUN_MANIFEST"
 
 if [ "$GIT_SCAN_EXIT_CODE" -eq 0 ] && [ "$DIR_SCAN_EXIT_CODE" -eq 0 ]; then
 	echo "scan completed, no issue found"

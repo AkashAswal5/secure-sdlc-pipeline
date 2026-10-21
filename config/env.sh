@@ -4,6 +4,9 @@
 WORKSPACE="/tmp/workspace"
 #REPORT_DIR="$HOME/reports"
 REPORT_DIR="/tmp/reports"
+# run manifest: scan scripts append "<tool>|<report-path>" lines here,
+# the aggregator reads it so it only uses reports from the current pipeline run
+RUN_MANIFEST="$REPORT_DIR/.run_manifest"
 TOOLS_WORKSPACE="/tmp/cyber_tools/semgrep-workspace"
 # TOOLS_WORKSPACE="$HOME/cyber_tools/semgrep-workspace"
 VENV_DIR="$TOOLS_WORKSPACE/myenv"
