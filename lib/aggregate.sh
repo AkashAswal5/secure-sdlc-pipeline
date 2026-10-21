@@ -52,6 +52,40 @@ manifest_lookup() {
   return 0
 }
 
+# ---- categorization ----
+# every finding gets exactly one category:
+#   secrets        - hardcoded credentials (gitleaks)
+#   dependency     - library / package vulnerabilities (osv-scanner, trivy CVE/GHSA)
+#   api            - findings in API route code (src/app/api/**)
+#   code           - other application code findings (semgrep)
+#   infrastructure - IaC / Docker / CI-CD / package-manager config findings (checkov, trivy misconfig, semgrep yaml/bash/npm rules)
+# reads a findings array on stdin, writes it back with a .category field added
+categorize_findings() {
+  jq 'map(
+    if .tool == "gitleaks" then .category = "secrets"
+    elif .tool == "osv-scanner" then .category = "dependency"
+    elif .tool == "trivy" and (.id | test("^(CVE|GHSA)")) then .category = "dependency"
+    elif .tool == "trivy" then .category = "infrastructure"
+    elif .tool == "checkov" then .category = "infrastructure"
+    elif .tool == "semgrep" and ((.id | test("^(yaml|bash|package_managers)\\.")) or (.id | test("github-actions|docker-compose"))) then .category = "infrastructure"
+    elif .tool == "semgrep" and ((.location // "") | contains("/src/app/api/")) then .category = "api"
+    else .category = "code"
+    end
+  )'
+}
+
+# human readable title for a category
+category_title() {
+  case "$1" in
+    secrets) echo "Hardcoded secrets" ;;
+    dependency) echo "Dependency / library vulnerabilities" ;;
+    api) echo "API route findings" ;;
+    code) echo "Application code findings" ;;
+    infrastructure) echo "Infrastructure / CI-CD / package findings" ;;
+    *) echo "Findings" ;;
+  esac
+}
+
 # ---- normalizers ----
 
 # semgrep: results[].extra.severity is ERROR/WARNING/INFO -> High/Medium/Low

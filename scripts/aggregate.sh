@@ -38,6 +38,10 @@ normalize_trivy "$TRIVY_REPORT" > "$TMP_AGG/trivy.json"
 
 jq -s 'add // []' "$TMP_AGG"/*.json > "$TMP_AGG/all_findings.json"
 
+# attach a category to every finding (secrets / dependency / api / code / infrastructure)
+categorize_findings < "$TMP_AGG/all_findings.json" > "$TMP_AGG/categorized.json"
+mv "$TMP_AGG/categorized.json" "$TMP_AGG/all_findings.json"
+
 TOTAL_FINDINGS=$(jq 'length' "$TMP_AGG/all_findings.json")
 VERDICT="PASS"
 if [ "$TOTAL_FINDINGS" -gt 0 ]; then
@@ -136,6 +140,26 @@ UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 			gsub("[\n\r\t]"; " ")' "$UNIFIED_JSON"
 	done
 } > "$UNIFIED_MD"
+
+# ---- per-category report files (api / code / secrets / dependency / infrastructure) ----
+for cat in secrets dependency api code infrastructure; do
+	cat_json="$UNIFIED_DIR/${cat}_findings_${TIMESTAMP}.json"
+	cat_md="$UNIFIED_DIR/${cat}_findings_${TIMESTAMP}.md"
+	jq --arg c "$cat" '[.[] | select(.category == $c)] | {category: $c, count: length, findings: .}' \
+		"$TMP_AGG/all_findings.json" > "$cat_json"
+	{
+		echo "# $(category_title "$cat")"
+		echo
+		echo "$(jq --arg c "$cat" '[.[] | select(.category == $c)] | length' "$TMP_AGG/all_findings.json") findings"
+		echo
+		echo "| Severity | Tool | ID | Location | Description |"
+		echo "| --- | --- | --- | --- | --- |"
+		jq -r --arg c "$cat" \
+			'.[] | select(.category == $c) |
+			"| \(.severity) | \(.tool) | \(.id) | \(.location) | \(.title) |" |
+			gsub("[\n\r\t]"; " ")' "$TMP_AGG/all_findings.json"
+	} > "$cat_md"
+done
 
 # ---- console summary + gate ----
 echo -e "............. unified report .............."
