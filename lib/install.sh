@@ -4,9 +4,14 @@ source config/env.sh
 
 # make sure PM vars are set when install scripts run directly (not via pipeline.sh)
 ensure_pm() {
-if [ -z "${PACKAGE_MANAGER:-}" ]; then
+if [ -z "${PM_INSTALL_CMD:-}" ]; then
   source lib/pm.sh
-  select_package_manager_auto
+  if [ -n "${PACKAGE_MANAGER:-}" ]; then
+    pm_config "$PACKAGE_MANAGER" || exit 1
+    pm_export
+  else
+    select_package_manager_auto
+  fi
 fi
 }
 
@@ -162,6 +167,65 @@ if ! command -v checkov >/dev/null 2>&1; then
   echo "installing checkov"
   pip3 install checkov
 fi
+}
+
+# find the osv-scanner binary: PATH first, then our tools-workspace fallback location
+resolve_osv_scanner() {
+  if command -v osv-scanner >/dev/null 2>&1; then
+    command -v osv-scanner
+  elif [ -x "$TOOLS_WORKSPACE/bin/osv-scanner" ]; then
+    echo "$TOOLS_WORKSPACE/bin/osv-scanner"
+  else
+    echo ""
+  fi
+}
+
+# osv-scanner is a single go binary: brew ships it, others get the official binary from github releases
+install_osv_scanner_binary() {
+  local bin_dir="$TOOLS_WORKSPACE/bin"
+  mkdir -p "$bin_dir"
+  local os arch tag
+  case "$(uname -s)" in
+    Linux) os="linux" ;;
+    Darwin) os="darwin" ;;
+    *)
+      echo "unsupported OS for osv-scanner binary: $(uname -s)"
+      exit 1
+      ;;
+  esac
+  case "$(uname -m)" in
+    x86_64|amd64) arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *)
+      echo "unsupported architecture for osv-scanner binary: $(uname -m)"
+      exit 1
+      ;;
+  esac
+  tag=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/google/osv-scanner/releases/latest | sed 's|.*/tag/||')
+  if [ -z "$tag" ] || [ "$tag" = "latest" ]; then
+    echo "failed to resolve latest osv-scanner release tag"
+    exit 1
+  fi
+  echo "downloading osv-scanner $tag ($os $arch)"
+  curl -sL -o "$bin_dir/osv-scanner" "https://github.com/google/osv-scanner/releases/download/${tag}/osv-scanner_${os}_${arch}"
+  chmod +x "$bin_dir/osv-scanner"
+  echo "osv-scanner binary installed at $bin_dir/osv-scanner"
+}
+
+install_osv_scanner() {
+  if command -v osv-scanner >/dev/null 2>&1; then
+    return 0
+  fi
+  case "$PACKAGE_MANAGER" in
+    brew)
+      echo "installing osv-scanner via brew"
+      pkg_install osv-scanner
+      ;;
+    *)
+      echo "osv-scanner not available in $PACKAGE_MANAGER, using binary download fallback"
+      install_osv_scanner_binary
+      ;;
+  esac
 }
 
 install_jq() {
