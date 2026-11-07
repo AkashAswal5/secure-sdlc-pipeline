@@ -15,15 +15,40 @@ fi
 	echo "Creating workspace"
 	mkdir -p "$WORKSPACE"
 
-# clone repo 
-echo "Cloning  repository..."
-git clone "$REPO_URL" "$WORKSPACE"
-
-if [ $? -eq 0 ]; then
-	echo "repo clone successfully....."
+if [ -d "$REPO_URL" ]; then
+	# local directory input:
+	# - a local git repo -> clone it (keeps history for gitleaks)
+	# - a plain folder   -> copy its contents (incl. dotfiles) into the workspace
+	if [ -d "$REPO_URL/.git" ]; then
+		echo "Cloning local repository..."
+		git clone "$REPO_URL" "$WORKSPACE"
+		if [ $? -eq 0 ]; then
+			echo "repo clone successfully....."
+		else
+			echo "Failed to clone repository."
+			exit 1
+		fi
+	else
+		echo "Local folder detected, copying into workspace..."
+		cp -R "$REPO_URL/." "$WORKSPACE/"
+		if [ $? -eq 0 ]; then
+			echo "source copied successfully....."
+		else
+			echo "Failed to copy source folder."
+			exit 1
+		fi
+	fi
 else
-	echo "Failed to clone repository."
-	exit 1
+	# clone remote repo
+	echo "Cloning  repository..."
+	git clone "$REPO_URL" "$WORKSPACE"
+
+	if [ $? -eq 0 ]; then
+		echo "repo clone successfully....."
+	else
+		echo "Failed to clone repository."
+		exit 1
+	fi
 fi
 
 

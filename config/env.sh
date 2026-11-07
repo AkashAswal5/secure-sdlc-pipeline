@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # REPO_URL
-WORKSPACE="/tmp/workspace"
-#REPORT_DIR="$HOME/reports"
-REPORT_DIR="/tmp/reports"
+# WORKSPACE / REPORT_DIR can be overridden via environment variables,
+# e.g. REPORT_DIR="$HOME/Desktop/report/GCS" ./pipeline.sh <repo>
+WORKSPACE="${WORKSPACE:-/tmp/workspace}"
+REPORT_DIR="${REPORT_DIR:-/tmp/reports}"
 # run manifest: scan scripts append "<tool>|<report-path>" lines here,
 # the aggregator reads it so it only uses reports from the current pipeline run
 RUN_MANIFEST="$REPORT_DIR/.run_manifest"
