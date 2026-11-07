@@ -28,22 +28,26 @@ fi
 
 TRIVY_JSON_REPORT="$REPORT_DIR/trivy/trivy_${TIMESTAMP}.json"
 TRIVY_TXT_REPORT="$REPORT_DIR/trivy/trivy_${TIMESTAMP}.txt"
+mkdir -p "$REPORT_DIR/trivy"
 
 # mode 1: scan a container image when SCAN_IMAGE is set (via ./pipeline.sh --image <name>)
 # mode 2: scan the workspace filesystem for dependency vulns and misconfigurations
 # --exit-code 1: exit 1 when findings exist (0 = no findings)
+# single scan pass: json output, the text report is converted from it
+# (avoids a second full scan incl. another round of remote pom resolution)
 set +e
 if [ -n "${SCAN_IMAGE:-}" ]; then
 	echo "scanning image: $SCAN_IMAGE"
 	"$TRIVY_BIN" image --exit-code 1 --format json --output "$TRIVY_JSON_REPORT" "$SCAN_IMAGE"
 	TRIVY_JSON_EXIT_CODE=$?
-	"$TRIVY_BIN" image --exit-code 1 --format table --output "$TRIVY_TXT_REPORT" "$SCAN_IMAGE"
-	TRIVY_TXT_EXIT_CODE=$?
 else
 	"$TRIVY_BIN" fs --scanners vuln,misconfig --exit-code 1 --format json --output "$TRIVY_JSON_REPORT" "$WORKSPACE"
 	TRIVY_JSON_EXIT_CODE=$?
-	"$TRIVY_BIN" fs --scanners vuln,misconfig --exit-code 1 --format table --output "$TRIVY_TXT_REPORT" "$WORKSPACE"
-	TRIVY_TXT_EXIT_CODE=$?
+fi
+
+# convert json -> table locally (no re-scan, no remote requests)
+if [ -s "$TRIVY_JSON_REPORT" ]; then
+	"$TRIVY_BIN" convert --format table "$TRIVY_JSON_REPORT" --output "$TRIVY_TXT_REPORT"
 fi
 set -e
 
@@ -55,10 +59,10 @@ if [ -s "$TRIVY_JSON_REPORT" ]; then
 	echo "trivy|$TRIVY_JSON_REPORT" >> "$RUN_MANIFEST"
 fi
 
-if [ "$TRIVY_JSON_EXIT_CODE" -eq 0 ] && [ "$TRIVY_TXT_EXIT_CODE" -eq 0 ]; then
+if [ "$TRIVY_JSON_EXIT_CODE" -eq 0 ]; then
 	echo "no issue found"
 else
-	echo "trivy issue found, json exit code: $TRIVY_JSON_EXIT_CODE, txt exit code: $TRIVY_TXT_EXIT_CODE"
+	echo "trivy issue found, json exit code: $TRIVY_JSON_EXIT_CODE"
 fi
 
 echo -e "............. summary of trivy .............."

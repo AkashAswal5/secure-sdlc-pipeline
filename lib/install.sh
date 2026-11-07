@@ -94,8 +94,11 @@ install_python3() {
 }
 
 create_virtual_environment() {
-if [ ! -d "$VENV_DIR" ] ; then
+# recreate the venv when missing OR broken (e.g. macOS purges /tmp contents,
+# leaving the dir behind without bin/activate -> source would fail)
+if [ ! -f "$VENV_DIR/bin/activate" ] ; then
    echo "Creating Virtual environment"
+   rm -rf "$VENV_DIR"
    python3 -m venv "$VENV_DIR"
 fi
 }
@@ -104,6 +107,8 @@ install_semgrep() {
 if ! command -v semgrep >/dev/null 2>&1; then
   echo "install semgrep"
   pip install semgrep
+else
+  echo "semgrep already installed ($(command -v semgrep)), skipping install"
 fi
 }
 
@@ -147,7 +152,9 @@ install_gitleaks_binary() {
 }
 
 install_gitleaks() {
-  if command -v gitleaks >/dev/null 2>&1; then
+  # already on PATH or in the tools-workspace fallback dir -> skip
+  if [ -n "$(resolve_gitleaks)" ]; then
+    echo "gitleaks already installed at $(resolve_gitleaks), skipping install"
     return 0
   fi
   case "$PACKAGE_MANAGER" in
@@ -166,6 +173,8 @@ install_checkov() {
 if ! command -v checkov >/dev/null 2>&1; then
   echo "installing checkov"
   pip3 install checkov
+else
+  echo "checkov already installed ($(command -v checkov)), skipping install"
 fi
 }
 
@@ -213,7 +222,9 @@ install_osv_scanner_binary() {
 }
 
 install_osv_scanner() {
-  if command -v osv-scanner >/dev/null 2>&1; then
+  # already on PATH or in the tools-workspace fallback dir -> skip
+  if [ -n "$(resolve_osv_scanner)" ]; then
+    echo "osv-scanner already installed at $(resolve_osv_scanner), skipping install"
     return 0
   fi
   case "$PACKAGE_MANAGER" in
@@ -277,7 +288,9 @@ install_trivy_binary() {
 }
 
 install_trivy() {
-  if command -v trivy >/dev/null 2>&1; then
+  # already on PATH or in the tools-workspace fallback dir -> skip
+  if [ -n "$(resolve_trivy)" ]; then
+    echo "trivy already installed at $(resolve_trivy), skipping install"
     return 0
   fi
   case "$PACKAGE_MANAGER" in

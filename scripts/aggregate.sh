@@ -11,6 +11,14 @@ source lib/aggregate.sh
 UNIFIED_DIR="$REPORT_DIR/unified"
 mkdir -p "$UNIFIED_DIR"
 
+# scan duration: pipeline.sh writes the run start epoch next to the manifest
+RUN_START=$(cat "$REPORT_DIR/.run_start" 2>/dev/null || echo "")
+if [ -n "$RUN_START" ] && [ "$RUN_START" -gt 0 ] 2>/dev/null; then
+	DURATION=$(( $(date +%s) - RUN_START ))
+else
+	DURATION=0
+fi
+
 echo "aggregating reports from $REPORT_DIR"
 if [ -s "$RUN_MANIFEST" ]; then
 	echo "mode: run manifest ($(wc -l < "$RUN_MANIFEST" | tr -d ' ') recorded reports from this run)"
@@ -46,6 +54,10 @@ mv "$TMP_AGG/categorized.json" "$TMP_AGG/all_findings.json"
 relativize_locations < "$TMP_AGG/all_findings.json" > "$TMP_AGG/relativized.json"
 mv "$TMP_AGG/relativized.json" "$TMP_AGG/all_findings.json"
 
+# tag every finding with its top-level component (repo in multi-repo scans)
+add_components < "$TMP_AGG/all_findings.json" > "$TMP_AGG/components.json"
+mv "$TMP_AGG/components.json" "$TMP_AGG/all_findings.json"
+
 TOTAL_FINDINGS=$(jq 'length' "$TMP_AGG/all_findings.json")
 VERDICT="PASS"
 if [ "$TOTAL_FINDINGS" -gt 0 ]; then
@@ -78,16 +90,20 @@ TOOLS_JSON=$(for t in semgrep gitleaks checkov osv-scanner trivy; do tool_status
 
 jq -n \
 	--arg repo_url "${REPO_URL:-unknown}" \
+	--arg workspace "${WORKSPACE:-unknown}" \
 	--arg timestamp "$TIMESTAMP" \
 	--arg pm "${PACKAGE_MANAGER:-unknown}" \
 	--arg verdict "$VERDICT" \
+	--argjson duration "$DURATION" \
 	--argjson total "$TOTAL_FINDINGS" \
 	--argjson tools "$TOOLS_JSON" \
 	--slurpfile findings "$TMP_AGG/all_findings.json" '
 	{
 		metadata: {
 			repo_url: $repo_url,
+			workspace: $workspace,
 			timestamp: $timestamp,
+			duration_sec: $duration,
 			package_manager: $pm
 		},
 		summary: {
@@ -100,6 +116,10 @@ jq -n \
 			categories: (reduce $findings[0][] as $f (
 				{secrets: 0, dependency: 0, api: 0, code: 0, infrastructure: 0};
 				.[$f.category] = (.[$f.category] + 1)
+			)),
+			components: (reduce $findings[0][] as $f (
+				{};
+				.[$f.component] = ((.[$f.component] // 0) + 1)
 			)),
 			tools: $tools
 		},
@@ -115,6 +135,9 @@ UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 	echo "- **Repo:** $(jq -r '.metadata.repo_url' "$UNIFIED_JSON")"
 	echo "- **Date:** $(jq -r '.metadata.timestamp' "$UNIFIED_JSON")"
 	echo "- **Package manager:** $(jq -r '.metadata.package_manager' "$UNIFIED_JSON")"
+	if [ "$DURATION" -gt 0 ]; then
+		echo "- **Scan duration:** $((DURATION / 60))m $((DURATION % 60))s"
+	fi
 	echo "- **Verdict:** **$VERDICT** ($TOTAL_FINDINGS findings)"
 	echo
 	echo "## Categories"
@@ -132,6 +155,17 @@ UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 	echo "| Critical | High | Medium | Low | Unknown |"
 	echo "| --- | --- | --- | --- | --- |"
 	jq -r '.summary.severity | "| \(.Critical) | \(.High) | \(.Medium) | \(.Low) | \(.Unknown) |"' "$UNIFIED_JSON"
+	echo
+	echo "## Findings by component"
+	echo
+	echo "_Top-level directories (the repos in a multi-repo scan) — focus remediation where counts are highest._"
+	echo
+	echo "| Component | Findings |"
+	echo "| --- | --- |"
+	jq -r 'group_by(.component)
+		| map({component: .[0].component, count: length})
+		| sort_by(-.count) | .[0:25][]
+		| "| \(.component) | \(.count) |"' "$TMP_AGG/all_findings.json"
 	echo
 	echo "## Top offenders"
 	echo
@@ -222,6 +256,7 @@ echo "verdict: $VERDICT ($TOTAL_FINDINGS findings)"
 jq -r '.summary.tools | to_entries[] | "  \(.key): \(.value.status) - \(.value.findings) findings"' "$UNIFIED_JSON"
 jq -r '.summary.severity | "  severity: critical=\(.Critical) high=\(.High) medium=\(.Medium) low=\(.Low) unknown=\(.Unknown)"' "$UNIFIED_JSON"
 jq -r '.summary.categories | to_entries[] | "  category \(.key): \(.value) findings"' "$UNIFIED_JSON"
+jq -r '.summary.components | to_entries | sort_by(-.value) | .[0:5][] | "  component \(.key): \(.value) findings"' "$UNIFIED_JSON"
 echo "category reports in $UNIFIED_DIR:"
 for cat in secrets dependency api code infrastructure; do
 	echo "  $cat: $UNIFIED_DIR/${cat}_findings_${TIMESTAMP}.json / .md"

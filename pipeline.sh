@@ -49,6 +49,8 @@ select_package_manager "$PM_ARG"
 # the aggregator (phase 6) then only uses reports from this pipeline run
 mkdir -p "$REPORT_DIR"
 : > "$RUN_MANIFEST"
+# record the run start time so the aggregator can report scan duration
+date +%s > "$REPORT_DIR/.run_start"
 
 bash scripts/clone.sh "$REPO_URL" "$WORKSPACE" || { echo "failed to clone $REPO_URL, aborting pipeline"; exit 1; }
 

@@ -95,6 +95,15 @@ relativize_locations() {
   )'
 }
 
+# tag every finding with its top-level component: the first path segment of the
+# repo-relative location (the repo dir in a multi-repo scan, the module dir in
+# a single-repo scan) - powers the "findings by component" report section
+add_components() {
+  jq 'map(
+    .component = ((.location // "") | if test("/") then split("/")[0] else "(root)" end)
+  )'
+}
+
 # ---- normalizers ----
 
 # semgrep: results[].extra.severity is ERROR/WARNING/INFO -> High/Medium/Low
