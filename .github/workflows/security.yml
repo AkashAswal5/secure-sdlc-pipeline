@@ -22,6 +22,9 @@ jobs:
     env:
       REPORT_DIR: reports
       BASELINE_FILE: baseline.json
+      # this repo is bash/yaml only - codeql would download its ~400MB bundle
+      # and then find no supported languages to analyze
+      SKIP_TOOLS: codeql
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

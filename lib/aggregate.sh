@@ -44,6 +44,7 @@ manifest_lookup() {
       checkov) path=$(find_latest_checkov_report) ;;
       osv-scanner) path=$(find_latest_report "$REPORT_DIR/osv-scanner" 'osv-scanner_*.json') ;;
       trivy) path=$(find_latest_report "$REPORT_DIR/trivy" 'trivy_*.json') ;;
+      codeql) path=$(find_latest_report "$REPORT_DIR/codeql" 'codeql_*.sarif') ;;
     esac
   fi
   if [ -n "$path" ] && [ -f "$path" ]; then
@@ -68,7 +69,7 @@ categorize_findings() {
     elif .tool == "trivy" then .category = "infrastructure"
     elif .tool == "checkov" then .category = "infrastructure"
     elif .tool == "semgrep" and ((.id | test("^(yaml|bash|package_managers)\\.")) or (.id | test("github-actions|docker-compose"))) then .category = "infrastructure"
-    elif .tool == "semgrep" and ((.location // "") | contains("/src/app/api/")) then .category = "api"
+    elif (.tool == "semgrep" or .tool == "codeql") and ((.location // "") | test("(^|/)src/app/api/")) then .category = "api"
     else .category = "code"
     end
   )'
@@ -122,15 +123,27 @@ resolve_tool_bin() {
 collect_tool_versions() {
   local tool bin ver
   local args=()
-  for tool in semgrep gitleaks checkov osv-scanner trivy; do
+  for tool in semgrep gitleaks checkov osv-scanner trivy codeql; do
     case "$tool" in
       semgrep) bin="${SEMGREP_BIN:-}" ;;
       checkov) bin="$VENV_DIR/bin/checkov" ;;
+      # codeql lives in the tools-workspace bundle dir, not bin/
+      codeql)
+        if command -v codeql >/dev/null 2>&1; then
+          bin=$(command -v codeql)
+        elif [ -x "$TOOLS_WORKSPACE/codeql/codeql" ]; then
+          bin="$TOOLS_WORKSPACE/codeql/codeql"
+        else
+          bin=""
+        fi
+        ;;
       *) bin=$(resolve_tool_bin "$tool") ;;
     esac
     ver="unknown"
     if [ -n "$bin" ] && [ -x "$bin" ]; then
       if [ "$tool" = "gitleaks" ]; then
+        ver=$("$bin" version 2>/dev/null | head -1 || true)
+      elif [ "$tool" = "codeql" ]; then
         ver=$("$bin" version 2>/dev/null | head -1 || true)
       else
         ver=$("$bin" --version 2>/dev/null | head -1 || true)
@@ -140,7 +153,7 @@ collect_tool_versions() {
     args+=(--arg "${tool//-/_}" "$ver")
   done
   jq -nc "${args[@]}" \
-    '{semgrep: $semgrep, gitleaks: $gitleaks, checkov: $checkov, "osv-scanner": $osv_scanner, trivy: $trivy}'
+    '{semgrep: $semgrep, gitleaks: $gitleaks, checkov: $checkov, "osv-scanner": $osv_scanner, trivy: $trivy, codeql: $codeql}'
 }
 
 # stable fingerprint per finding: tool + rule id + file path (no line number -
@@ -322,4 +335,21 @@ normalize_trivy() {
       description: (.Message // .Title // "")
     })
   ]' "$report"
+}
+
+# codeql (phase 9): sarif runs[].results[] - one merged sarif covers all languages.
+# level error/warning/note maps to High/Medium/Low; queries with a
+# security-severity property would be more precise but the level is always present
+normalize_codeql() {
+  local report="$1"
+  if [ -z "$report" ]; then echo "[]"; return 0; fi
+  jq -c '[.runs[]?.results[]? | {
+    tool: "codeql",
+    severity: ({"error": "High", "warning": "Medium", "note": "Low"}[.level] // "Medium"),
+    id: (.ruleId // "codeql-finding"),
+    title: (.ruleId // "codeql finding"),
+    location: (((.locations[0].physicalLocation.artifactLocation.uri // "?") | tostring)
+      + ":" + (((.locations[0].physicalLocation.region.startLine // 0)) | tostring)),
+    description: ((.message.text // .ruleId // "") | tostring)
+  }]' "$report"
 }
