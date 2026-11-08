@@ -10,7 +10,7 @@
 - Phase 8: Production readiness — SARIF output, CI integration, suppressions/baseline triage, dedup, parallel scans, pinned Docker image
 - Phase 9: CodeQL — Advanced semantic code analysis (branch `phase9-codeql`)
 - Phase 10: SBOM — Generate Software Bill of Materials (branch `phase10-sbom`)
-- Phase 11: Tekton — Kubernetes-native CI/CD security pipeline
+- Phase 11: Tekton — Kubernetes-native CI/CD security pipeline (branch `phase11-tekton`, see `tekton/README.md`)
 
 ---
 
