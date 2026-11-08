@@ -1,0 +1,52 @@
+# security-scan task: runs the pinned secure-sdlc-pipeline container image
+# against a cloned repository. the task fails when the pipeline gate fails
+# (new findings) - that is the kubernetes-native gate.
+#
+# the image must exist in a registry reachable by the cluster:
+#   docker build -t <registry>/secure-sdlc-pipeline:v0.2.0 .
+#   docker push <registry>/secure-sdlc-pipeline:v0.2.0
+# pass its full name through the `image` param.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: secure-sdlc-scan
+spec:
+  params:
+    - name: image
+      type: string
+      default: docker.io/akashaswal5/secure-sdlc-pipeline:v0.2.0
+      description: pinned scanner image (build + push it first, see Dockerfile)
+    - name: skip-tools
+      type: string
+      default: "codeql"
+      description: comma-separated scanners to skip (the codeql bundle is heavy in-cluster)
+    - name: extra-args
+      type: string
+      default: ""
+      description: extra pipeline.sh flags, e.g. "--baseline"
+  workspaces:
+    - name: source
+      description: workspace containing the cloned repo/ directory
+    - name: reports
+      description: unified reports, sarif and sbom land here
+  steps:
+    - name: scan
+      image: "$(params.image)"
+      env:
+        - name: WORKSPACE
+          value: /workspace/scan
+        - name: REPORT_DIR
+          value: "$(workspaces.reports.path)"
+        - name: SKIP_TOOLS
+          value: "$(params.skip-tools)"
+        - name: BASELINE_FILE
+          value: "$(workspaces.reports.path)/baseline.json"
+      script: |
+        #!/bin/bash
+        set -eu
+        # WORKSPACE must be writable by the non-root scanner user in the image
+        mkdir -p "$WORKSPACE"
+        bash /pipeline/pipeline.sh "$(workspaces.source.path)/repo" \
+          --pm apt $(params.extra-args)
+      # the pipeline exits non-zero when the gate fails -> task fails ->
+      # PipelineRun shows Failed: that is the intended gate behavior
