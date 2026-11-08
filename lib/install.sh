@@ -317,3 +317,64 @@ if ! command -v jq >/dev/null 2>&1; then
   pkg_install jq
 fi
 }
+
+# ---- codeql (phase 9) ----
+
+# find the codeql cli: PATH first, then the tools-workspace bundle dir
+resolve_codeql() {
+  if command -v codeql >/dev/null 2>&1; then
+    command -v codeql
+  elif [ -x "$TOOLS_WORKSPACE/codeql/codeql" ]; then
+    echo "$TOOLS_WORKSPACE/codeql/codeql"
+  fi
+}
+
+install_codeql_binary() {
+  local tag platform asset tmp
+  case "$(uname -s)/$(uname -m)" in
+    Linux/x86_64) platform="linux64" ;;
+    Linux/aarch64|Linux/arm64) platform="linux-arm64" ;;
+    Darwin/*) platform="osx64" ;;
+    *)
+      echo "unsupported platform for the codeql bundle: $(uname -s)/$(uname -m)"
+      exit 1
+      ;;
+  esac
+  # release tags look like codeql-bundle-v2.22.x, assets are named by platform only
+  tag=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/github/codeql-cli-binaries/releases/latest | sed 's|.*/tag/||')
+  if [ -z "$tag" ] || [ "$tag" = "latest" ]; then
+    echo "failed to resolve latest codeql bundle release tag"
+    exit 1
+  fi
+  asset="codeql-bundle-${platform}.tar.gz"
+  tmp=$(mktemp -d)
+  echo "downloading codeql bundle $tag ($platform)"
+  if ! curl -fsSL -o "$tmp/codeql-bundle.tar.gz" "https://github.com/github/codeql-cli-binaries/releases/download/${tag}/${asset}"; then
+    echo "codeql download failed (no release asset for $tag on $platform)"
+    rm -rf "$tmp"
+    exit 1
+  fi
+  # the bundle extracts into a top-level "codeql/" directory holding the cli + query packs
+  tar -xzf "$tmp/codeql-bundle.tar.gz" -C "$TOOLS_WORKSPACE"
+  rm -rf "$tmp"
+  chmod +x "$TOOLS_WORKSPACE/codeql/codeql"
+  echo "codeql bundle installed at $TOOLS_WORKSPACE/codeql/codeql"
+}
+
+install_codeql() {
+  # already on PATH or in the tools-workspace bundle dir -> skip
+  if [ -n "$(resolve_codeql)" ]; then
+    echo "codeql already installed at $(resolve_codeql), skipping install"
+    return 0
+  fi
+  case "$PACKAGE_MANAGER" in
+    brew)
+      echo "installing codeql via brew (cask)"
+      brew install --cask codeql || install_codeql_binary
+      ;;
+    *)
+      # not in apt/dnf/etc: always the bundle download
+      install_codeql_binary
+      ;;
+  esac
+}
