@@ -104,6 +104,94 @@ add_components() {
   )'
 }
 
+# ---- fingerprints, dedup, triage (phase 8) ----
+
+# resolve a tool binary: PATH first, then tools-workspace fallback dir
+resolve_tool_bin() {
+  local name="$1" bin=""
+  if command -v "$name" >/dev/null 2>&1; then
+    bin=$(command -v "$name")
+  elif [ -x "$TOOLS_WORKSPACE/bin/$name" ]; then
+    bin="$TOOLS_WORKSPACE/bin/$name"
+  fi
+  echo "$bin"
+}
+
+# collect scanner versions for report metadata - a report that does not
+# record scanner versions is not auditable
+collect_tool_versions() {
+  local tool bin ver
+  local args=()
+  for tool in semgrep gitleaks checkov osv-scanner trivy; do
+    case "$tool" in
+      semgrep) bin="${SEMGREP_BIN:-}" ;;
+      checkov) bin="$VENV_DIR/bin/checkov" ;;
+      *) bin=$(resolve_tool_bin "$tool") ;;
+    esac
+    ver="unknown"
+    if [ -n "$bin" ] && [ -x "$bin" ]; then
+      if [ "$tool" = "gitleaks" ]; then
+        ver=$("$bin" version 2>/dev/null | head -1 || true)
+      else
+        ver=$("$bin" --version 2>/dev/null | head -1 || true)
+      fi
+      [ -n "$ver" ] || ver="unknown"
+    fi
+    args+=(--arg "${tool//-/_}" "$ver")
+  done
+  jq -nc "${args[@]}" \
+    '{semgrep: $semgrep, gitleaks: $gitleaks, checkov: $checkov, "osv-scanner": $osv_scanner, trivy: $trivy}'
+}
+
+# stable fingerprint per finding: tool + rule id + file path (no line number -
+# line numbers drift between commits and would break suppressions/baseline).
+# reads a findings array on stdin, writes it back with a .fingerprint field
+add_fingerprints() {
+  jq 'map(
+    .fingerprint = ([.tool, .id, ((.location // "") | split(" -> ")[0] | split(":")[0])] | join(" | "))
+  )'
+}
+
+# dedup across scanners: the same id at the same location collapses into one
+# finding carrying a .scanners list, the worst severity and a duplicate count.
+# this is what makes the summary counts trustworthy (trivy and osv-scanner
+# routinely report the same advisory)
+dedup_findings() {
+  jq '
+    def sev_rank: {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Unknown": 4}[.] // 5;
+    group_by(.id + "\u0000" + (.location // ""))
+    | map(
+      (sort_by(.severity | sev_rank) | .[0])
+      + {scanners: (map(.tool) | unique | sort), duplicate_count: (length - 1)}
+    )
+  '
+}
+
+# mark findings whose fingerprint has a valid (unexpired) suppression entry.
+# $1 = suppressions array json, $2 = today (YYYY-MM-DD); reads findings on stdin.
+# expired entries are simply not applied - those findings re-alert
+apply_suppressions() {
+  jq --argjson sup "$1" --arg today "$2" '
+    (($sup // [])
+      | map(select(((.expires // "") == "") or (.expires >= $today)))
+      | map({(.fingerprint): (.reason // "no reason given")})
+      | add // {}) as $active
+    | map(
+      if $active[.fingerprint] then
+        . + {suppressed: true, suppression_reason: $active[.fingerprint]}
+      else . end
+    )
+  '
+}
+
+# mark findings whose fingerprint is in the baseline as known (.known = true).
+# $1 = baseline fingerprints json array; reads findings on stdin
+apply_baseline() {
+  jq --argjson base "$1" '
+    map(. as $f | . + {known: ((($base // []) | index($f.fingerprint)) != null)})
+  '
+}
+
 # ---- normalizers ----
 
 # semgrep: results[].extra.severity is ERROR/WARNING/INFO -> High/Medium/Low
