@@ -1,0 +1,29 @@
+# git-clone task for the secure-sdlc Tekton pipeline.
+# kept self-contained (no catalog dependency): one step, pinned image,
+# full clone (no --depth: gitleaks needs the git history)
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: secure-sdlc-clone
+spec:
+  params:
+    - name: repo-url
+      type: string
+      description: git repository to scan
+    - name: revision
+      type: string
+      default: "main"
+  workspaces:
+    - name: output
+      description: the cloned repository is placed here
+  steps:
+    - name: clone
+      image: docker.io/alpine/git:v2.43.0
+      script: |
+        #!/bin/sh
+        set -eu
+        rm -rf "$(workspaces.output.path)"/*
+        git clone --branch "$(params.revision)" \
+          "$(params.repo-url)" \
+          "$(workspaces.output.path)/repo"
+        echo "cloned $(params.repo-url) @ $(params.revision)"
