@@ -9,7 +9,7 @@
 - Phase 7: Pipeline hardening — local-folder input, single-pass scans, multi-repo gitleaks, component breakdown
 - Phase 8: Production readiness — SARIF output, CI integration, suppressions/baseline triage, dedup, parallel scans, pinned Docker image
 - Phase 9: CodeQL — Advanced semantic code analysis (branch `phase9-codeql`)
-- Phase 10: SBOM — Generate Software Bill of Materials
+- Phase 10: SBOM — Generate Software Bill of Materials (branch `phase10-sbom`)
 - Phase 11: Tekton — Kubernetes-native CI/CD security pipeline
 
 ---
@@ -116,4 +116,9 @@ Trivy scans containers and filesystems:
     - `scripts/codeql.sh` detects the languages in the workspace (python, javascript, java, go, cpp, csharp, ruby, swift, kotlin) and runs one database + `security-and-quality` analysis per language; interpreted languages extract without a build, compiled ones need the toolchain present or the language is skipped with a warning
     - all per-language SARIF runs merge into `reports/codeql/codeql_<TS>.sarif`, findings flow through the aggregator into the unified report (level error/warning/note → High/Medium/Low), the SARIF directory and the gate like every other scanner
     - a lighter run is possible with `CODEQL_SUITE=python-security-queries` style overrides (default: `<lang>-security-and-quality`)
+
+- phase 10 — SBOM (`phase10-sbom` branch):
+    - `scripts/sbom.sh` generates a **CycloneDX** and an **SPDX** SBOM of the workspace via trivy (`--skip-db-update`: no vulnerability database involved, no conflict with the parallel trivy scan)
+    - outputs land in `reports/sbom/sbom_<TS>.cyclonedx.json` / `.spdx.json` plus a markdown summary (component counts by type, direct dependencies)
+    - an SBOM is an **artifact, not a findings source** — nothing enters the run manifest, the unified report or the gate; skip it with `SKIP_TOOLS=sbom`
 
