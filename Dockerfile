@@ -45,4 +45,15 @@ RUN set -eux; \
 WORKDIR /pipeline
 COPY . /pipeline
 
+# non-root runtime user (CKV_DOCKER_3 / trivy DS-0002 / semgrep missing-user).
+# when mounting a host dir at /reports, override with: docker run -u "$(id -u):$(id -g)"
+RUN useradd -m scanner \
+    && mkdir -p /workspace /reports \
+    && chown -R scanner:scanner /pipeline /workspace /reports
+
+# minimal image-integrity healthcheck (CKV_DOCKER_2 / trivy DS-0026)
+HEALTHCHECK CMD test -f /pipeline/pipeline.sh
+
+USER scanner
+
 ENTRYPOINT ["bash", "pipeline.sh"]
