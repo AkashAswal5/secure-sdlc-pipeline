@@ -6,10 +6,11 @@
 - Phase 4: OSV-Scanner / Grype — Dependency vulnerability scanning
 - Phase 5: Trivy — Container image vulnerability scanning
 - Phase 6: Report Aggregation — Generate a unified security report
-- Phase 7: GitHub Actions — Automate security scans in CI/CD
-- Phase 8: CodeQL — Advanced semantic code analysis
-- Phase 9: SBOM — Generate Software Bill of Materials
-- Phase 10: Tekton — Kubernetes-native CI/CD security pipeline
+- Phase 7: Pipeline hardening — local-folder input, single-pass scans, multi-repo gitleaks, component breakdown
+- Phase 8: Production readiness — SARIF output, CI integration, suppressions/baseline triage, dedup, parallel scans, pinned Docker image
+- Phase 9: CodeQL — Advanced semantic code analysis
+- Phase 10: SBOM — Generate Software Bill of Materials
+- Phase 11: Tekton — Kubernetes-native CI/CD security pipeline
 
 
 ---
@@ -46,4 +47,23 @@ Trivy scans containers and filesystems:
         - `api_findings_<TS>` — findings in API route code (src/app/api/**)
         - `code_findings_<TS>` — other application code findings (semgrep)
         - `infrastructure_findings_<TS>` — IaC / Docker / CI-CD / package-manager config findings (checkov, trivy misconfig, semgrep yaml/bash/npm rules)
+
+- phase 8 — production readiness:
+    - **parallel scans**: the 5 scan scripts run concurrently (installs stay sequential); `--serial` disables this for debugging
+    - **dedup**: the same finding reported by multiple scanners (e.g. trivy + osv-scanner on the same advisory) collapses into one entry with a `.scanners` list and the worst severity
+    - **fingerprints**: every finding gets a stable fingerprint `<tool> | <rule-id> | <file>` (no line number — lines drift between commits)
+    - **suppressions** (`config/suppressions.json`, override with `SUPPRESSIONS_FILE`):
+        ```json
+        {"suppressed": [
+          {"fingerprint": "semgrep | python.lang.security.exec | lib/foo.py",
+           "reason": "accepted risk, ticket SEC-123",
+           "expires": "2027-01-01"}
+        ]}
+        ```
+        suppressed findings move to a separate report section and never fail the gate; expired entries automatically re-alert
+    - **baseline**: `./pipeline.sh <repo> --baseline` records the current active findings in `$BASELINE_FILE` (default `$REPORT_DIR/baseline.json`, override with `BASELINE_FILE`); later runs only fail the gate on **new** findings — the adoption path for brownfield repos
+    - **SARIF 2.1.0**: `$REPORT_DIR/sarif/<tool>.sarif` derived from the normalized findings (still one scan pass per tool) — upload to GitHub code scanning and findings appear as inline PR annotations
+    - **scanner versions** are recorded in the unified report metadata (auditable reports)
+    - **CI**: `.github/workflows/security.yml` runs the pipeline on every PR/push, uploads SARIF to code scanning, and gates on new findings only; dispatch it once with `write_baseline=true` to commit the initial `baseline.json`
+    - **pinned image**: `docker build -t secure-sdlc-pipeline .` pre-installs pinned tool versions at `/opt/tools` (see `Dockerfile` ARGs) so every run uses identical scanner versions
 
