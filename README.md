@@ -8,7 +8,7 @@
 - Phase 6: Report Aggregation — Generate a unified security report
 - Phase 7: Pipeline hardening — local-folder input, single-pass scans, multi-repo gitleaks, component breakdown
 - Phase 8: Production readiness — SARIF output, CI integration, suppressions/baseline triage, dedup, parallel scans, pinned Docker image
-- Phase 9: CodeQL — Advanced semantic code analysis
+- Phase 9: CodeQL — Advanced semantic code analysis (branch `phase9-codeql`)
 - Phase 10: SBOM — Generate Software Bill of Materials
 - Phase 11: Tekton — Kubernetes-native CI/CD security pipeline
 
@@ -34,6 +34,8 @@
 
 # env overrides (REPORT_DIR default is /tmp/reports - macOS purges /tmp)
 REPORT_DIR="$HOME/reports" WORKSPACE="$HOME/ws" ./pipeline.sh <url-or-dir>
+# skip scanners entirely (comma-separated) when they cannot run somewhere
+SKIP_TOOLS=codeql ./pipeline.sh <url-or-dir>
 ```
 
 ### Where the output lands (`$REPORT_DIR`)
@@ -91,7 +93,7 @@ Trivy scans containers and filesystems:
         - `infrastructure_findings_<TS>` — IaC / Docker / CI-CD / package-manager config findings (checkov, trivy misconfig, semgrep yaml/bash/npm rules)
 
 - phase 8 — production readiness:
-    - **parallel scans**: the 5 scan scripts run concurrently (installs stay sequential); `--serial` disables this for debugging
+    - **parallel scans**: the scan scripts run concurrently (installs stay sequential); `--serial` disables this for debugging
     - **dedup**: the same finding reported by multiple scanners (e.g. trivy + osv-scanner on the same advisory) collapses into one entry with a `.scanners` list and the worst severity
     - **fingerprints**: every finding gets a stable fingerprint `<tool> | <rule-id> | <file>` (no line number — lines drift between commits)
     - **suppressions** (`config/suppressions.json`, override with `SUPPRESSIONS_FILE`):
@@ -106,6 +108,12 @@ Trivy scans containers and filesystems:
     - **baseline**: `./pipeline.sh <repo> --baseline` records the current active findings in `$BASELINE_FILE` (default `$REPORT_DIR/baseline.json`, override with `BASELINE_FILE`); later runs only fail the gate on **new** findings — the adoption path for brownfield repos
     - **SARIF 2.1.0**: `$REPORT_DIR/sarif/<tool>.sarif` derived from the normalized findings (still one scan pass per tool) — upload to GitHub code scanning and findings appear as inline PR annotations
     - **scanner versions** are recorded in the unified report metadata (auditable reports)
-    - **CI**: `.github/workflows/security.yml` runs the pipeline on every PR/push, uploads SARIF to code scanning, and gates on new findings only; dispatch it once with `write_baseline=true` to commit the initial `baseline.json`
+    - **CI**: `.github/workflows/security.yml` runs the pipeline on every PR/push, uploads SARIF to code scanning, and gates on new findings only; run the **write-scan-baseline** workflow once to commit the initial `baseline.json`
     - **pinned image**: `docker build -t secure-sdlc-pipeline .` pre-installs pinned tool versions at `/opt/tools` (see `Dockerfile` ARGs) so every run uses identical scanner versions
+
+- phase 9 — CodeQL (`phase9-codeql` branch):
+    - **CodeQL CLI** (github bundle, incl. the standard query packs) installs to `$TOOLS_WORKSPACE/codeql/` — brew cask on macOS, bundle download elsewhere; skipped when already present
+    - `scripts/codeql.sh` detects the languages in the workspace (python, javascript, java, go, cpp, csharp, ruby, swift, kotlin) and runs one database + `security-and-quality` analysis per language; interpreted languages extract without a build, compiled ones need the toolchain present or the language is skipped with a warning
+    - all per-language SARIF runs merge into `reports/codeql/codeql_<TS>.sarif`, findings flow through the aggregator into the unified report (level error/warning/note → High/Medium/Low), the SARIF directory and the gate like every other scanner
+    - a lighter run is possible with `CODEQL_SUITE=python-security-queries` style overrides (default: `<lang>-security-and-quality`)
 
