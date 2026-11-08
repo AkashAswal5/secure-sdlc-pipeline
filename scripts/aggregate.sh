@@ -7,6 +7,7 @@ set -euo pipefail
 
 source config/env.sh
 source lib/aggregate.sh
+source lib/sarif.sh
 
 UNIFIED_DIR="$REPORT_DIR/unified"
 mkdir -p "$UNIFIED_DIR"
@@ -58,20 +59,91 @@ mv "$TMP_AGG/relativized.json" "$TMP_AGG/all_findings.json"
 add_components < "$TMP_AGG/all_findings.json" > "$TMP_AGG/components.json"
 mv "$TMP_AGG/components.json" "$TMP_AGG/all_findings.json"
 
+# ---- phase 8: fingerprints, dedup, triage state ----
+
+# stable fingerprints (tool + rule + file): power dedup, suppressions, baseline, sarif
+add_fingerprints < "$TMP_AGG/all_findings.json" > "$TMP_AGG/fingerprinted.json"
+mv "$TMP_AGG/fingerprinted.json" "$TMP_AGG/all_findings.json"
+
+# collapse cross-scanner duplicates (same id at the same location) so summary
+# counts are trustworthy - trivy and osv-scanner routinely report the same advisory
+RAW_COUNT=$(jq 'length' "$TMP_AGG/all_findings.json")
+dedup_findings < "$TMP_AGG/all_findings.json" > "$TMP_AGG/deduped.json"
+mv "$TMP_AGG/deduped.json" "$TMP_AGG/all_findings.json"
+DUPLICATES_REMOVED=$((RAW_COUNT - $(jq 'length' "$TMP_AGG/all_findings.json")))
+
+# suppressions: {"suppressed": [{fingerprint, reason, expires}]}; expired entries re-alert
+SUPPRESSIONS_JSON="[]"
+if [ -f "$SUPPRESSIONS_FILE" ]; then
+	if jq -e '(.suppressed | type) == "array"' "$SUPPRESSIONS_FILE" >/dev/null 2>&1; then
+		SUPPRESSIONS_JSON=$(jq -c '.suppressed // []' "$SUPPRESSIONS_FILE")
+	else
+		echo "warning: $SUPPRESSIONS_FILE is malformed (expected {\"suppressed\": [...]}), ignoring suppressions"
+	fi
+fi
+apply_suppressions "$SUPPRESSIONS_JSON" "$(date +%F)" < "$TMP_AGG/all_findings.json" > "$TMP_AGG/suppressed_marked.json"
+mv "$TMP_AGG/suppressed_marked.json" "$TMP_AGG/all_findings.json"
+
+# baseline: known findings do not fail the gate, only NEW ones do -
+# the adoption path for brownfield repos
+BASELINE_JSON="[]"
+BASELINE_STATUS="none"
+if [ -f "$BASELINE_FILE" ]; then
+	if jq -e '(.fingerprints | type) == "array"' "$BASELINE_FILE" >/dev/null 2>&1; then
+		BASELINE_JSON=$(jq -c '.fingerprints // []' "$BASELINE_FILE")
+		BASELINE_STATUS="active"
+	else
+		echo "warning: $BASELINE_FILE is malformed (expected {\"fingerprints\": [...]}), ignoring baseline"
+	fi
+fi
+apply_baseline "$BASELINE_JSON" < "$TMP_AGG/all_findings.json" > "$TMP_AGG/baselined.json"
+mv "$TMP_AGG/baselined.json" "$TMP_AGG/all_findings.json"
+
+# split active (gate-relevant) from suppressed; from here on all_findings.json
+# holds ONLY the active findings, suppressed ones move to suppressed.json
+jq '[.[] | select(.suppressed // false | not)]' "$TMP_AGG/all_findings.json" > "$TMP_AGG/active.json"
+jq '[.[] | select(.suppressed // false)]' "$TMP_AGG/all_findings.json" > "$TMP_AGG/suppressed.json"
+mv "$TMP_AGG/active.json" "$TMP_AGG/all_findings.json"
+
 TOTAL_FINDINGS=$(jq 'length' "$TMP_AGG/all_findings.json")
+KNOWN_COUNT=$(jq '[.[] | select(.known)] | length' "$TMP_AGG/all_findings.json")
+SUPPRESSED_COUNT=$(jq 'length' "$TMP_AGG/suppressed.json")
+NEW_FINDINGS=$((TOTAL_FINDINGS - KNOWN_COUNT))
 VERDICT="PASS"
-if [ "$TOTAL_FINDINGS" -gt 0 ]; then
+if [ "$NEW_FINDINGS" -gt 0 ]; then
 	VERDICT="FAIL"
 fi
+
+# write a fresh baseline when requested (./pipeline.sh <repo> --baseline)
+if [ "${CREATE_BASELINE:-0}" = "1" ]; then
+	mkdir -p "$(dirname "$BASELINE_FILE")"
+	jq --arg ts "$TIMESTAMP" --arg repo "${REPO_URL:-unknown}" \
+		'{created: $ts, repo: $repo, fingerprints: (map(.fingerprint) | unique)}' \
+		"$TMP_AGG/all_findings.json" > "$BASELINE_FILE"
+	echo "baseline written: $BASELINE_FILE ($TOTAL_FINDINGS active finding fingerprints)"
+	BASELINE_STATUS="written"
+fi
+
+# ---- SARIF 2.1.0 output: upload to github code scanning for PR annotations ----
+SARIF_DIR="$REPORT_DIR/sarif"
+mkdir -p "$SARIF_DIR"
+for tool in semgrep gitleaks checkov osv-scanner trivy; do
+	jq --arg t "$tool" '[.[] | select(.tool == $t)]' "$TMP_AGG/all_findings.json" > "$TMP_AGG/sarif_$tool.json"
+	findings_to_sarif "$tool" "$TMP_AGG/sarif_$tool.json" "$SARIF_DIR/$tool.sarif"
+done
+
+# scanner versions for report metadata (auditable reports)
+TOOL_VERSIONS=$(collect_tool_versions)
 
 # ---- build the unified json report ----
 UNIFIED_JSON="$UNIFIED_DIR/unified_report_${TIMESTAMP}.json"
 
 # build one {tool: {status, findings}} json fragment per tool
+# counts include deduped findings the tool co-reported (.scanners membership)
 tool_status_json() {
 	local t="$1" report_var status
 	local count
-	count=$(jq --arg t "$t" '[.[] | select(.tool == $t)] | length' "$TMP_AGG/all_findings.json")
+	count=$(jq --arg t "$t" '[.[] | select(.tool == $t or ((.scanners // []) | index($t) != null))] | length' "$TMP_AGG/all_findings.json")
 	case "$t" in
 	semgrep) report_var="$SEMGREP_REPORT" ;;
 	gitleaks) report_var="$GITLEAKS_GIT_REPORT$GITLEAKS_DIR_REPORT" ;;
@@ -94,21 +166,37 @@ jq -n \
 	--arg timestamp "$TIMESTAMP" \
 	--arg pm "${PACKAGE_MANAGER:-unknown}" \
 	--arg verdict "$VERDICT" \
+	--arg baseline "$BASELINE_STATUS" \
+	--arg baseline_file "$BASELINE_FILE" \
+	--arg suppressions_file "$SUPPRESSIONS_FILE" \
+	--argjson versions "$TOOL_VERSIONS" \
 	--argjson duration "$DURATION" \
 	--argjson total "$TOTAL_FINDINGS" \
+	--argjson known "$KNOWN_COUNT" \
+	--argjson new "$NEW_FINDINGS" \
+	--argjson suppressed_count "$SUPPRESSED_COUNT" \
+	--argjson duplicates "$DUPLICATES_REMOVED" \
 	--argjson tools "$TOOLS_JSON" \
-	--slurpfile findings "$TMP_AGG/all_findings.json" '
+	--slurpfile findings "$TMP_AGG/all_findings.json" \
+	--slurpfile suppressed "$TMP_AGG/suppressed.json" '
 	{
 		metadata: {
 			repo_url: $repo_url,
 			workspace: $workspace,
 			timestamp: $timestamp,
 			duration_sec: $duration,
-			package_manager: $pm
+			package_manager: $pm,
+			tool_versions: $versions,
+			baseline: {status: $baseline, file: $baseline_file},
+			suppressions_file: $suppressions_file
 		},
 		summary: {
 			verdict: $verdict,
 			total_findings: $total,
+			known_findings: $known,
+			new_findings: $new,
+			suppressed_findings: $suppressed_count,
+			duplicates_removed: $duplicates,
 			severity: (reduce $findings[0][] as $f (
 				{Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0};
 				.[$f.severity] = (.[$f.severity] + 1)
@@ -123,7 +211,8 @@ jq -n \
 			)),
 			tools: $tools
 		},
-		findings: ($findings[0] // [])
+		findings: ($findings[0] // []),
+		suppressed_findings: ($suppressed[0] // [])
 	}' > "$UNIFIED_JSON"
 
 # ---- build the unified markdown report (executive style) ----
@@ -138,8 +227,29 @@ UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 	if [ "$DURATION" -gt 0 ]; then
 		echo "- **Scan duration:** $((DURATION / 60))m $((DURATION % 60))s"
 	fi
-	echo "- **Verdict:** **$VERDICT** ($TOTAL_FINDINGS findings)"
+	echo "- **Verdict:** **$VERDICT** ($NEW_FINDINGS new findings, $KNOWN_COUNT known, $SUPPRESSED_COUNT suppressed, $DUPLICATES_REMOVED duplicates removed)"
 	echo
+	echo "## Triage"
+	echo
+	echo "_Suppressed and baseline-known findings do not fail the gate — only new findings do._"
+	echo
+	echo "| State | Findings |"
+	echo "| --- | --- |"
+	echo "| New (fail the gate) | $NEW_FINDINGS |"
+	echo "| Known (in baseline) | $KNOWN_COUNT |"
+	echo "| Suppressed | $SUPPRESSED_COUNT |"
+	if [ "$DUPLICATES_REMOVED" -gt 0 ]; then
+		echo "| Duplicate reports removed | $DUPLICATES_REMOVED |"
+	fi
+	echo
+	if [ "$SUPPRESSED_COUNT" -gt 0 ]; then
+		echo "### Suppressed findings"
+		echo
+		echo "| Fingerprint | Reason |"
+		echo "| --- | --- |"
+		jq -r '.[] | "| \(.fingerprint) | \(.suppression_reason) |"' "$TMP_AGG/suppressed.json"
+		echo
+	fi
 	echo "## Categories"
 	echo
 	echo "| Category | Findings |"
@@ -252,22 +362,24 @@ done
 
 # ---- console summary + gate ----
 echo -e "............. unified report .............."
-echo "verdict: $VERDICT ($TOTAL_FINDINGS findings)"
+echo "verdict: $VERDICT ($NEW_FINDINGS new / $KNOWN_COUNT known / $SUPPRESSED_COUNT suppressed, $DUPLICATES_REMOVED duplicates removed)"
 jq -r '.summary.tools | to_entries[] | "  \(.key): \(.value.status) - \(.value.findings) findings"' "$UNIFIED_JSON"
 jq -r '.summary.severity | "  severity: critical=\(.Critical) high=\(.High) medium=\(.Medium) low=\(.Low) unknown=\(.Unknown)"' "$UNIFIED_JSON"
 jq -r '.summary.categories | to_entries[] | "  category \(.key): \(.value) findings"' "$UNIFIED_JSON"
 jq -r '.summary.components | to_entries | sort_by(-.value) | .[0:5][] | "  component \(.key): \(.value) findings"' "$UNIFIED_JSON"
+jq -r '.metadata.tool_versions | to_entries[] | "  scanner \(.key): \(.value)"' "$UNIFIED_JSON"
 echo "category reports in $UNIFIED_DIR:"
 for cat in secrets dependency api code infrastructure; do
 	echo "  $cat: $UNIFIED_DIR/${cat}_findings_${TIMESTAMP}.json / .md"
 done
+echo "sarif (code scanning / PR annotations): $SARIF_DIR/<tool>.sarif"
 echo "unified json: $UNIFIED_JSON"
 echo "unified markdown: $UNIFIED_MD"
 
 if [ "$VERDICT" = "FAIL" ]; then
-	echo "pipeline gate: FAIL - findings detected"
+	echo "pipeline gate: FAIL - $NEW_FINDINGS new findings detected (fix them, suppress them with a reason, or refresh the baseline with --baseline)"
 	exit 1
 fi
 
-echo "pipeline gate: PASS - no findings"
+echo "pipeline gate: PASS - no new findings"
 exit 0
