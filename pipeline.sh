@@ -67,21 +67,35 @@ date +%s > "$REPORT_DIR/.run_start"
 
 bash scripts/clone.sh "$REPO_URL" "$WORKSPACE" || { echo "failed to clone $REPO_URL, aborting pipeline"; exit 1; }
 
-# tool installs stay sequential (package managers are not concurrency-safe),
-# but the scans themselves are independent - run them in parallel
-bash install/install_semgrep.sh
-bash install/install_gitleaks.sh
-bash install/install_checkov.sh
-bash install/install_osv_scanner.sh
+# tools to skip entirely, comma-separated (e.g. SKIP_TOOLS=codeql,trivy) -
+# useful when a scanner cannot run in an environment (heavy download, no
+# supported languages, license restrictions)
+SKIP_TOOLS="${SKIP_TOOLS:-}"
+is_skipped() {
+    case ",$SKIP_TOOLS," in
+        *",$1,"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # trivy (image mode when --image given, else filesystem scan of the repo)
 if [ -n "$IMAGE_ARG" ]; then
     export SCAN_IMAGE="$IMAGE_ARG"
 fi
-bash install/install_trivy.sh
 
-# scan scripts: semgrep.sh gitleaks.sh checkov.sh osv_scanner.sh trivy.sh
-SCAN_SCRIPTS="semgrep gitleaks checkov osv_scanner trivy"
+# install + run list: semgrep gitleaks checkov osv_scanner trivy codeql
+# installs stay sequential (package managers are not concurrency-safe),
+# but the scans themselves are independent - run them in parallel
+SCAN_SCRIPTS=""
+for s in semgrep gitleaks checkov osv_scanner trivy codeql; do
+    if is_skipped "$s"; then
+        echo "skipping $s (SKIP_TOOLS)"
+        continue
+    fi
+    bash "install/install_$s.sh"
+    SCAN_SCRIPTS="$SCAN_SCRIPTS $s"
+done
+SCAN_SCRIPTS="${SCAN_SCRIPTS# }"
 
 if [ "$SERIAL" -eq 1 ]; then
     echo "running scans serially (--serial)"

@@ -34,6 +34,7 @@ GITLEAKS_DIR_REPORT=$(manifest_lookup "gitleaks-dir")
 CHECKOV_REPORT=$(manifest_lookup "checkov")
 OSV_REPORT=$(manifest_lookup "osv-scanner")
 TRIVY_REPORT=$(manifest_lookup "trivy")
+CODEQL_REPORT=$(manifest_lookup "codeql")
 
 # ---- normalize every tool into the common finding shape ----
 TMP_AGG=$(mktemp -d)
@@ -44,6 +45,7 @@ normalize_gitleaks "$GITLEAKS_GIT_REPORT" "$GITLEAKS_DIR_REPORT" > "$TMP_AGG/git
 normalize_checkov "$CHECKOV_REPORT" > "$TMP_AGG/checkov.json"
 normalize_osv "$OSV_REPORT" > "$TMP_AGG/osv-scanner.json"
 normalize_trivy "$TRIVY_REPORT" > "$TMP_AGG/trivy.json"
+normalize_codeql "$CODEQL_REPORT" > "$TMP_AGG/codeql.json"
 
 jq -s 'add // []' "$TMP_AGG"/*.json > "$TMP_AGG/all_findings.json"
 
@@ -127,7 +129,7 @@ fi
 # ---- SARIF 2.1.0 output: upload to github code scanning for PR annotations ----
 SARIF_DIR="$REPORT_DIR/sarif"
 mkdir -p "$SARIF_DIR"
-for tool in semgrep gitleaks checkov osv-scanner trivy; do
+for tool in semgrep gitleaks checkov osv-scanner trivy codeql; do
 	jq --arg t "$tool" '[.[] | select(.tool == $t)]' "$TMP_AGG/all_findings.json" > "$TMP_AGG/sarif_$tool.json"
 	findings_to_sarif "$tool" "$TMP_AGG/sarif_$tool.json" "$SARIF_DIR/$tool.sarif"
 done
@@ -150,6 +152,7 @@ tool_status_json() {
 	checkov) report_var="$CHECKOV_REPORT" ;;
 	osv-scanner) report_var="$OSV_REPORT" ;;
 	trivy) report_var="$TRIVY_REPORT" ;;
+	codeql) report_var="$CODEQL_REPORT" ;;
 	esac
 	status="ran"
 	if [ -z "$report_var" ]; then
@@ -158,7 +161,7 @@ tool_status_json() {
 	jq -nc --arg t "$t" --arg s "$status" --argjson c "$count" '{($t): {status: $s, findings: $c}}'
 }
 
-TOOLS_JSON=$(for t in semgrep gitleaks checkov osv-scanner trivy; do tool_status_json "$t"; done | jq -sc 'add')
+TOOLS_JSON=$(for t in semgrep gitleaks checkov osv-scanner trivy codeql; do tool_status_json "$t"; done | jq -sc 'add')
 
 jq -n \
 	--arg repo_url "${REPO_URL:-unknown}" \
@@ -303,7 +306,7 @@ UNIFIED_MD="$UNIFIED_DIR/unified_report_${TIMESTAMP}.md"
 	echo
 	echo "| Tool | Status | Findings |"
 	echo "| --- | --- | --- |"
-	for t in semgrep gitleaks checkov osv-scanner trivy; do
+	for t in semgrep gitleaks checkov osv-scanner trivy codeql; do
 		jq -r --arg t "$t" '.summary.tools[$t] | "| \($t) | \(.status) | \(.findings) |"' "$UNIFIED_JSON"
 	done
 	echo
