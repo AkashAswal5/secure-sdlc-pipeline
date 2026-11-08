@@ -330,6 +330,18 @@ for cat in secrets dependency api code infrastructure; do
 		echo
 		if [ "$cat_count" -eq 0 ]; then
 			echo "_No findings in this category._"
+		elif [ "$cat" = "secrets" ]; then
+			echo "Secret values are masked (first 8 chars) - full values stay in the raw gitleaks json report:"
+			echo
+			echo "| Severity | Rule | Location | Secret preview | Source |"
+			echo "| --- | --- | --- | --- | --- |"
+			jq -r --arg c "$cat" '.[] | select(.category == $c)
+				| (.secret_preview // "—") as $prev
+				| ((.source // "?")
+					+ (if (.commit // "") != "" then " (commit " + .commit + ")" else "" end)
+					+ (if (.author // "") != "" then " by " + .author else "" end)) as $src
+				| "| \(.severity) | \(.id) | \(.location) | \($prev) | \($src) |"
+				| gsub("[\n\r\t]"; " ")' "$TMP_AGG/all_findings.json"
 		elif [ "$cat" = "dependency" ]; then
 			echo "Grouped by package (advisory IDs counted as reported by each scanner —"
 			echo "the same vulnerability may appear under a CVE id from one scanner and a"

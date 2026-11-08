@@ -12,6 +12,48 @@
 - Phase 10: SBOM — Generate Software Bill of Materials
 - Phase 11: Tekton — Kubernetes-native CI/CD security pipeline
 
+---
+
+## How to run
+
+```bash
+# scan a remote repo
+./pipeline.sh https://github.com/user/repo
+
+# scan a local git repo (clones it, keeps history for the gitleaks git scan)
+# or a plain folder (copies it)
+./pipeline.sh /path/to/repo
+
+# scan a container image instead of / in addition to the repo filesystem
+./pipeline.sh <url-or-dir> --image nginx:1.25
+
+# other flags
+#   --pm <pacman|brew|apt|dnf|apk>   non-interactive package manager (CI)
+#   --baseline                       record current findings as the baseline
+#   --serial                         run scans one-by-one instead of parallel (debugging)
+
+# env overrides (REPORT_DIR default is /tmp/reports - macOS purges /tmp)
+REPORT_DIR="$HOME/reports" WORKSPACE="$HOME/ws" ./pipeline.sh <url-or-dir>
+```
+
+### Where the output lands (`$REPORT_DIR`)
+
+| Path | What it shows |
+| --- | --- |
+| `unified/unified_report_<TS>.md` | executive report: verdict, triage (new/known/suppressed), category + severity summary, findings by component, top offenders, critical findings |
+| `unified/unified_report_<TS>.json` | machine readable: metadata (incl. scanner versions), summary, all normalized findings, suppressed findings |
+| `unified/secrets_findings_<TS>.md` / `.json` | **every hardcoded secret**: rule, `file:line`, a masked preview (first 8 chars only — full values never land in reports), and for history finds the commit + author |
+| `unified/dependency_findings_<TS>.md` | vulnerable packages grouped with advisories, worst severity, which scanners reported them |
+| `unified/code_findings_<TS>.md`, `unified/api_findings_<TS>.md`, `unified/infrastructure_findings_<TS>.md` | per-category findings tables |
+| `sarif/<tool>.sarif` | SARIF 2.1.0 per tool — upload to GitHub code scanning for inline PR annotations |
+| `gitleaks/`, `semgrep/`, `checkov/`, `osv-scanner/`, `trivy/` | raw per-tool reports (the gitleaks json keeps full secret values — handle it accordingly) |
+
+The pipeline exit code gates CI: 0 = no new findings, 1 = new findings detected.
+
+### CI + Docker
+
+- `.github/workflows/security.yml` runs the pipeline on every PR/push, uploads SARIF to code scanning (findings appear as inline PR annotations) and gates on **new** findings only. Dispatch it once with `write_baseline=true` to commit the initial `baseline.json`.
+- `docker build -t secure-sdlc-pipeline . && docker run --rm -v "$PWD/reports:/reports" secure-sdlc-pipeline <url-or-dir>` — pinned tool versions, identical scanners every run.
 
 ---
 ### references

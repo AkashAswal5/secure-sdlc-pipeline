@@ -210,6 +210,8 @@ normalize_semgrep() {
 
 # gitleaks: no severity concept, hardcoded secrets are always High
 # merges the git-history and working-directory reports, dedupes id+location
+# secrets are NEVER printed in full here - only a masked preview (first 8
+# chars); the raw gitleaks json report keeps the full values
 normalize_gitleaks() {
   local git_report="$1" dir_report="$2" tmp_git tmp_dir
   if [ -z "$git_report" ] && [ -z "$dir_report" ]; then echo "[]"; return 0; fi
@@ -221,7 +223,16 @@ normalize_gitleaks() {
       id: (.RuleID // "gitleaks-finding"),
       title: (.Description // .RuleID // "hardcoded secret"),
       location: ((.File // "?") + ":" + ((.StartLine // 0) | tostring)),
-      description: ((.Description // .RuleID // "") + " - found in git history")
+      description: (
+        (.Description // .RuleID // "hardcoded secret")
+        + " - found in git history"
+        + (if (.Commit // "") != "" then " (commit " + (.Commit[0:8]) + (if (.Author // "") != "" then " by " + .Author else "" end) + ")" else "" end)
+        + (if (.Secret // "") != "" then " - preview: " + (if ((.Secret | length) > 8) then (.Secret[0:8] + "…") else "…" end) else "" end)
+      ),
+      secret_preview: (if ((.Secret // "") | length) > 8 then (.Secret[0:8] + "…") else "…" end),
+      source: "git history",
+      commit: (if (.Commit // "") != "" then .Commit[0:8] else "" end),
+      author: (.Author // "")
     }]' "$git_report" > "$tmp_git" || echo "[]" > "$tmp_git"
   else
     echo "[]" > "$tmp_git"
@@ -233,12 +244,25 @@ normalize_gitleaks() {
       id: (.RuleID // "gitleaks-finding"),
       title: (.Description // .RuleID // "hardcoded secret"),
       location: ((.File // "?") + ":" + ((.StartLine // 0) | tostring)),
-      description: ((.Description // .RuleID // "") + " - found in working directory")
+      description: (
+        (.Description // .RuleID // "hardcoded secret")
+        + " - found in working directory"
+        + (if (.Secret // "") != "" then " - preview: " + (if ((.Secret | length) > 8) then (.Secret[0:8] + "…") else "…" end) else "" end)
+      ),
+      secret_preview: (if ((.Secret // "") | length) > 8 then (.Secret[0:8] + "…") else "…" end),
+      source: "working directory",
+      commit: "",
+      author: ""
     }]' "$dir_report" > "$tmp_dir" || echo "[]" > "$tmp_dir"
   else
     echo "[]" > "$tmp_dir"
   fi
-  jq -s 'add // [] | unique_by(.id + "|" + .location)' "$tmp_git" "$tmp_dir"
+  # dedupe git-history vs working-directory hits on the same secret; prefer the
+  # git-history entry (carries commit + author). unique_by alone is not enough -
+  # it sorts first, so which duplicate survives would be arbitrary
+  jq -s 'add // []
+    | group_by(.id + "|" + .location)
+    | map(min_by((.commit // "") == ""))' "$tmp_git" "$tmp_dir"
   rm -f "$tmp_git" "$tmp_dir"
 }
 
