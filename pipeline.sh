@@ -118,6 +118,14 @@ else
     done
 fi
 
+# SBOM generation (phase 10): runs after the scans - it is fast, needs no
+# vulnerability database and produces an artifact (not findings, no gate impact)
+if is_skipped sbom; then
+    echo "skipping sbom (SKIP_TOOLS)"
+else
+    bash scripts/sbom.sh "$WORKSPACE" || echo "warning: sbom generation failed"
+fi
+
 # report aggregation (phase 6): unified json + markdown report
 # exits 1 when any tool found issues, this gates the whole pipeline
 bash scripts/aggregate.sh
