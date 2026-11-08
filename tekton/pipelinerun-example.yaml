@@ -1,0 +1,38 @@
+# example run of the secure-sdlc Tekton pipeline.
+# prerequisites:
+#   kubectl apply -f tekton/tasks/task-git-clone.yaml
+#   kubectl apply -f tekton/tasks/task-security-scan.yaml
+#   kubectl apply -f tekton/pipeline.yaml
+# and the scanner image pushed to a registry the cluster can pull (see task).
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: secure-sdlc-run-example
+spec:
+  pipelineRef:
+    name: secure-sdlc-pipeline
+  params:
+    - name: repo-url
+      value: https://github.com/AkashAswal5/secure-sdlc-pipeline
+    - name: revision
+      value: "main"
+    - name: image
+      value: docker.io/akashaswal5/secure-sdlc-pipeline:v0.2.0
+    - name: skip-tools
+      value: "codeql"
+    # to (re)write the scan baseline instead of gating: "--baseline"
+    - name: extra-args
+      value: ""
+  workspaces:
+    # the clone is throwaway per run
+    - name: source
+      emptyDir: {}
+    # reports persist across runs - swap for a PVC in real use
+    - name: reports
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
