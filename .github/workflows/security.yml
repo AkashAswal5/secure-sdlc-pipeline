@@ -1,0 +1,84 @@
+name: security-scan
+
+# runs the full pipeline on every PR and push to main.
+# SARIF output is uploaded to github code scanning -> findings show up as
+# inline PR annotations in code review.
+# the gate only fails on NEW findings (baseline-aware), so brownfield repos
+# adopt via: dispatch this workflow once with write_baseline=true, which
+# commits a baseline.json, then PRs only fail on regressions.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      write_baseline:
+        description: 'write current findings as the new baseline (commits baseline.json)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write        # only used by the baseline-commit step (workflow_dispatch)
+  security-events: write # sarif upload
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      REPORT_DIR: reports
+      BASELINE_FILE: baseline.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: gitleaks scans git history
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-${{ runner.os }}-${{ github.sha }}
+          restore-keys: trivy-${{ runner.os }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.semgrep
+          key: semgrep-${{ runner.os }}-${{ github.sha }}
+          restore-keys: semgrep-${{ runner.os }}-
+
+      - name: run pipeline
+        id: scan
+        continue-on-error: true # upload sarif even when the gate fails
+        run: |
+          ARGS=("$GITHUB_WORKSPACE" --pm apt)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.write_baseline }}" = "true" ]; then
+            ARGS+=(--baseline)
+          fi
+          ./pipeline.sh "${ARGS[@]}"
+
+      - name: commit refreshed baseline
+        if: github.event_name == 'workflow_dispatch' && inputs.write_baseline == true
+        run: |
+          git config user.name "security-bot"
+          git config user.email "security-bot@users.noreply.github.com"
+          git add baseline.json
+          git commit -m "security: refresh scan baseline" || echo "no baseline changes to commit"
+          git push
+
+      - name: upload sarif to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/sarif/*.sarif
+
+      - name: upload unified reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: reports/unified/
+
+      - name: gate
+        if: always() && steps.scan.outcome == 'failure'
+        run: |
+          echo "pipeline gate: FAIL - new findings detected (see code scanning alerts and the security-reports artifact)"
+          exit 1
