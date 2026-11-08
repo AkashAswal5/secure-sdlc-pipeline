@@ -12,7 +12,9 @@ RUN_MANIFEST="$REPORT_DIR/.run_manifest"
 TOOLS_WORKSPACE="${TOOLS_WORKSPACE:-/tmp/cyber_tools/semgrep-workspace}"
 VENV_DIR="$TOOLS_WORKSPACE/myenv"
 # PACKAGE_MANAGER is set by lib/pm.sh (prompt / auto-detect / --pm override)
-TIMESTAMP=$(date +"20%y_%m_%d_%H:%M:%S")
+# no colons in the timestamp: report filenames end up in CI artifacts, which
+# reject paths containing ":"
+TIMESTAMP=$(date +"20%y-%m-%d_%H-%M-%S")
 SEMGREP_BIN="$VENV_DIR/bin/semgrep"
 SEMGREP_RULES_CONFIG="auto"
 
