@@ -66,9 +66,9 @@ jobs:
 
       - name: upload sarif to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: reports/sarif/*.sarif
+          sarif_file: reports/sarif # a directory: uploads every <tool>.sarif in it
 
       - name: upload unified reports
         if: always()
