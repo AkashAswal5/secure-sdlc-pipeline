@@ -6,8 +6,10 @@ source lib/pm.sh
 REPO_URL=""
 PM_ARG=""
 IMAGE_ARG=""
+CREATE_BASELINE=0
+SERIAL=0
 
-# parse args: ./pipeline.sh <git-repo-url> [--pm <pacman|brew|apt|dnf|apk>]
+# parse args: ./pipeline.sh <git-repo-url> [--pm <pacman|brew|apt|dnf|apk>] [--image <container-image>] [--baseline] [--serial]
 while [ $# -gt 0 ]; do
     case "$1" in
         --pm)
@@ -26,6 +28,16 @@ while [ $# -gt 0 ]; do
             IMAGE_ARG="$2"
             shift 2
             ;;
+        --baseline)
+            # write the current active findings as the new baseline after this run
+            CREATE_BASELINE=1
+            shift
+            ;;
+        --serial)
+            # run the scan scripts one after another instead of in parallel (debugging)
+            SERIAL=1
+            shift
+            ;;
         *)
             REPO_URL="$1"
             shift
@@ -35,12 +47,13 @@ done
 
 if [ -z "$REPO_URL" ]; then # -z check if user provide string or not
     # run if above condition is true
-   echo "Usage: ./pipeline.sh <git-repo-url> [--pm <pacman|brew|apt|dnf|apk>] [--image <container-image>]"
+   echo "Usage: ./pipeline.sh <git-repo-url-or-local-dir> [--pm <pacman|brew|apt|dnf|apk>] [--image <container-image>] [--baseline] [--serial]"
    exit 1
 fi
 
 echo "running ./pipeline.sh $REPO_URL"
 export REPO_URL # `export REPO_URL` makes it available to child processes like clone.sh.
+export CREATE_BASELINE
 
 # ask user for package manager (auto-picks if only one installed, honors --pm / PACKAGE_MANAGER)
 select_package_manager "$PM_ARG"
@@ -54,28 +67,42 @@ date +%s > "$REPORT_DIR/.run_start"
 
 bash scripts/clone.sh "$REPO_URL" "$WORKSPACE" || { echo "failed to clone $REPO_URL, aborting pipeline"; exit 1; }
 
-# semgrep
+# tool installs stay sequential (package managers are not concurrency-safe),
+# but the scans themselves are independent - run them in parallel
 bash install/install_semgrep.sh
-bash scripts/semgrep.sh "$WORKSPACE"
-
-# gitleaks
 bash install/install_gitleaks.sh
-bash scripts/gitleaks.sh "$WORKSPACE"
-
-# checkov
 bash install/install_checkov.sh
-bash scripts/checkov.sh "$WORKSPACE"
-
-# osv-scanner
 bash install/install_osv_scanner.sh
-bash scripts/osv_scanner.sh "$WORKSPACE"
 
 # trivy (image mode when --image given, else filesystem scan of the repo)
 if [ -n "$IMAGE_ARG" ]; then
     export SCAN_IMAGE="$IMAGE_ARG"
 fi
 bash install/install_trivy.sh
-bash scripts/trivy.sh "$WORKSPACE"
+
+# scan scripts: semgrep.sh gitleaks.sh checkov.sh osv_scanner.sh trivy.sh
+SCAN_SCRIPTS="semgrep gitleaks checkov osv_scanner trivy"
+
+if [ "$SERIAL" -eq 1 ]; then
+    echo "running scans serially (--serial)"
+    for s in $SCAN_SCRIPTS; do
+        bash "scripts/$s.sh" "$WORKSPACE" || echo "warning: scan script $s.sh failed"
+    done
+else
+    # concurrent appends to the run manifest are safe: each line is short and
+    # written in a single O_APPEND write
+    echo "running scans in parallel"
+    pids=""
+    for s in $SCAN_SCRIPTS; do
+        bash "scripts/$s.sh" "$WORKSPACE" &
+        pids="$pids $!"
+    done
+    for pid in $pids; do
+        if ! wait "$pid"; then
+            echo "warning: a scan script failed (see output above), continuing with the tools that did run"
+        fi
+    done
+fi
 
 # report aggregation (phase 6): unified json + markdown report
 # exits 1 when any tool found issues, this gates the whole pipeline
