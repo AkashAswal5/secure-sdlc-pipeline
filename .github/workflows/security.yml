@@ -3,23 +3,17 @@ name: security-scan
 # runs the full pipeline on every PR and push to main.
 # SARIF output is uploaded to github code scanning -> findings show up as
 # inline PR annotations in code review.
-# the gate only fails on NEW findings (baseline-aware), so brownfield repos
-# adopt via: dispatch this workflow once with write_baseline=true, which
-# commits a baseline.json, then PRs only fail on regressions.
+# the gate fails on NEW findings only (baseline.json, written by the
+# write-scan-baseline workflow); actions are pinned to commit SHAs so a
+# mutable tag cannot silently change what runs in CI.
 
 on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      write_baseline:
-        description: 'write current findings as the new baseline (commits baseline.json)'
-        type: boolean
-        default: false
 
 permissions:
-  contents: write        # only used by the baseline-commit step (workflow_dispatch)
+  contents: read        # least privilege: this workflow never pushes
   security-events: write # sarif upload
 
 jobs:
@@ -29,17 +23,17 @@ jobs:
       REPORT_DIR: reports
       BASELINE_FILE: baseline.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # full history: gitleaks scans git history
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/trivy
           key: trivy-${{ runner.os }}-${{ github.sha }}
           restore-keys: trivy-${{ runner.os }}-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.semgrep
           key: semgrep-${{ runner.os }}-${{ github.sha }}
@@ -48,31 +42,17 @@ jobs:
       - name: run pipeline
         id: scan
         continue-on-error: true # upload sarif even when the gate fails
-        run: |
-          ARGS=("$GITHUB_WORKSPACE" --pm apt)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.write_baseline }}" = "true" ]; then
-            ARGS+=(--baseline)
-          fi
-          ./pipeline.sh "${ARGS[@]}"
-
-      - name: commit refreshed baseline
-        if: github.event_name == 'workflow_dispatch' && inputs.write_baseline == true
-        run: |
-          git config user.name "security-bot"
-          git config user.email "security-bot@users.noreply.github.com"
-          git add baseline.json
-          git commit -m "security: refresh scan baseline" || echo "no baseline changes to commit"
-          git push
+        run: ./pipeline.sh "$GITHUB_WORKSPACE" --pm apt
 
       - name: upload sarif to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           sarif_file: reports/sarif # a directory: uploads every <tool>.sarif in it
 
       - name: upload unified reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: security-reports
           path: reports/unified/

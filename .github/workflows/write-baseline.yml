@@ -1,0 +1,65 @@
+name: write-scan-baseline
+
+# manual run only: records the current active findings as baseline.json and
+# commits it. after this, security-scan only gates on NEW findings - the
+# adoption path for accepted/known findings.
+# deliberately has NO workflow_dispatch inputs: user parameters in a workflow
+# that writes to the repo are what checkov CKV_GHA_7 flags.
+
+on: workflow_dispatch
+
+permissions:
+  contents: write        # commits baseline.json
+  security-events: write # sarif upload
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    env:
+      REPORT_DIR: reports
+      BASELINE_FILE: baseline.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-${{ runner.os }}-${{ github.sha }}
+          restore-keys: trivy-${{ runner.os }}-
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.semgrep
+          key: semgrep-${{ runner.os }}-${{ github.sha }}
+          restore-keys: semgrep-${{ runner.os }}-
+
+      - name: run pipeline with --baseline
+        id: scan
+        continue-on-error: true
+        run: ./pipeline.sh "$GITHUB_WORKSPACE" --pm apt --baseline
+
+      - name: upload sarif to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          sarif_file: reports/sarif
+
+      - name: upload unified reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-reports-baseline
+          path: reports/unified/
+
+      - name: commit baseline
+        run: |
+          git config user.name "security-bot"
+          git config user.email "security-bot@users.noreply.github.com"
+          git add baseline.json
+          git commit -m "security: refresh scan baseline" || echo "no baseline changes to commit"
+          git push
+
+      - name: summary
+        run: echo "baseline refreshed - security-scan now passes until a NEW finding appears"

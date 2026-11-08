@@ -52,7 +52,7 @@ The pipeline exit code gates CI: 0 = no new findings, 1 = new findings detected.
 
 ### CI + Docker
 
-- `.github/workflows/security.yml` runs the pipeline on every PR/push, uploads SARIF to code scanning (findings appear as inline PR annotations) and gates on **new** findings only. Dispatch it once with `write_baseline=true` to commit the initial `baseline.json`.
+- `.github/workflows/security.yml` runs the pipeline on every PR/push, uploads SARIF to code scanning (findings appear as inline PR annotations) and gates on **new** findings only. Run the **write-scan-baseline** workflow once (Actions tab → Run workflow) to commit the initial `baseline.json`. Actions are pinned to commit SHAs — bump them deliberately.
 - `docker build -t secure-sdlc-pipeline . && docker run --rm -v "$PWD/reports:/reports" secure-sdlc-pipeline <url-or-dir>` — pinned tool versions, identical scanners every run.
 
 ---
