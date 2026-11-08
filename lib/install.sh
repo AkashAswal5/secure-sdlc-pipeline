@@ -141,9 +141,15 @@ install_gitleaks_binary() {
     echo "failed to resolve latest gitleaks release tag"
     exit 1
   fi
+  # release asset filenames omit the leading "v" of the tag (v8.30.1 -> gitleaks_8.30.1_...)
+  local ver="${tag#v}"
   tmp=$(mktemp -d)
   echo "downloading gitleaks $tag (linux $arch)"
-  curl -sL -o "$tmp/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/${tag}/gitleaks_${tag}_linux_${arch}.tar.gz"
+  if ! curl -fsSL -o "$tmp/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/${tag}/gitleaks_${ver}_linux_${arch}.tar.gz"; then
+    echo "gitleaks download failed (no release asset for $tag linux $arch)"
+    rm -rf "$tmp"
+    exit 1
+  fi
   tar -xzf "$tmp/gitleaks.tar.gz" -C "$tmp"
   mv "$tmp/gitleaks" "$bin_dir/gitleaks"
   chmod +x "$bin_dir/gitleaks"
