@@ -1,0 +1,57 @@
+# the full kubernetes-native pipeline: clone -> scan -> gate.
+# apply the tasks first (tekton/tasks/*.yaml), then this pipeline,
+# then a PipelineRun (see pipelinerun-example.yaml).
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: secure-sdlc-pipeline
+spec:
+  params:
+    - name: repo-url
+      type: string
+      description: git repository to scan
+    - name: revision
+      type: string
+      default: "main"
+    - name: image
+      type: string
+      default: docker.io/akashaswal5/secure-sdlc-pipeline:v0.2.0
+      description: pinned scanner image (build + push it first)
+    - name: skip-tools
+      type: string
+      default: "codeql"
+    - name: extra-args
+      type: string
+      default: ""
+  workspaces:
+    - name: source
+    - name: reports
+  tasks:
+    - name: clone
+      taskRef:
+        name: secure-sdlc-clone
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+      workspaces:
+        - name: output
+          workspace: source
+    - name: scan
+      taskRef:
+        name: secure-sdlc-scan
+      runAfter:
+        - clone
+      params:
+        - name: image
+          value: $(params.image)
+        - name: skip-tools
+          value: $(params.skip-tools)
+        - name: extra-args
+          value: $(params.extra-args)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: reports
+          workspace: reports
