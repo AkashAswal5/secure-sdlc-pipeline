@@ -1,0 +1,4 @@
+.git
+reports
+/tmp
+*.sarif
